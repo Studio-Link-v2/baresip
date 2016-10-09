@@ -174,8 +174,17 @@ int conf_path_get(char *path, size_t sz)
 		return err;
 #endif
 
-	if (re_snprintf(path, sz, "%s" DIR_SEP ".baresip", buf) < 0)
+
+#ifdef SLPLUGIN
+	if (re_snprintf(path, sz, "%s" DIR_SEP ".studio-link-plugin", buf) < 0)
 		return ENOMEM;
+#elif SLIVE
+	if (re_snprintf(path, sz, "%s" DIR_SEP ".studio-link-live", buf) < 0)
+		return ENOMEM;
+#else
+	if (re_snprintf(path, sz, "%s" DIR_SEP ".studio-link", buf) < 0)
+		return ENOMEM;
+#endif
 
 	return 0;
 }

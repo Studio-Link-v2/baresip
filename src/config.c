@@ -33,7 +33,7 @@ static struct config core_config = {
 	/** Call config */
 	{
 		120,
-		4
+		8
 	},
 
 	/** Audio */
@@ -350,10 +350,14 @@ int config_print(struct re_printf *pf, const struct config *cfg)
 
 static const char *default_audio_device(void)
 {
-#if defined (ANDROID)
+#if defined (SLPLUGIN)
+	return "effect";
+#elif defined (SLIVE)
+	return "effectlive";
+#elif defined (ANDROID)
 	return "opensles,nil";
 #elif defined (DARWIN)
-	return "coreaudio,nil";
+	return "audiounit,nil";
 #elif defined (FREEBSD)
 	return "oss,/dev/dsp";
 #elif defined (OPENBSD)
@@ -425,7 +429,7 @@ static int core_config_template(struct re_printf *pf, const struct config *cfg)
 				"\n"
 			  "\n# SIP\n"
 			  "sip_trans_bsize\t\t128\n"
-			  "#sip_listen\t\t0.0.0.0:5060\n"
+			  "sip_listen\t\t0.0.0.0:0\n"
 			  "#sip_certificate\tcert.pem\n"
 			  "\n"
 			  "# Call\n"
@@ -439,10 +443,10 @@ static int core_config_template(struct re_printf *pf, const struct config *cfg)
 			  "audio_alert\t\t%s\n"
 			  "audio_srate\t\t%u-%u\n"
 			  "audio_channels\t\t%u-%u\n"
-			  "#ausrc_srate\t\t48000\n"
-			  "#auplay_srate\t\t48000\n"
-			  "#ausrc_channels\t\t0\n"
-			  "#auplay_channels\t\t0\n"
+			  "ausrc_srate\t\t48000\n"
+			  "auplay_srate\t\t48000\n"
+			  "ausrc_channels\t\t2\n"
+			  "auplay_channels\t\t2\n"
 			  ,
 			  poll_method_name(poll_method_best()),
 			  cfg->call.local_timeout,
@@ -474,7 +478,7 @@ static int core_config_template(struct re_printf *pf, const struct config *cfg)
 			  "#rtp_bandwidth\t\t512-1024 # [kbit/s]\n"
 			  "rtcp_enable\t\tyes\n"
 			  "rtcp_mux\t\tno\n"
-			  "jitter_buffer_delay\t%u-%u\t\t# frames\n"
+			  "jitter_buffer_delay\t1-5\t\t# frames\n"
 			  "rtp_stats\t\tno\n"
 			  "#rtp_timeout\t\t60\n"
 			  "\n# Network\n"
@@ -603,7 +607,7 @@ int config_write_template(const char *file, const struct config *cfg)
 	(void)re_fprintf(f, "#module\t\t\t" MOD_PRE "httpd" MOD_EXT "\n");
 
 	(void)re_fprintf(f, "\n# Audio codec Modules (in order)\n");
-	(void)re_fprintf(f, "#module\t\t\t" MOD_PRE "opus" MOD_EXT "\n");
+	(void)re_fprintf(f, "module\t\t\t" MOD_PRE "opus" MOD_EXT "\n");
 	(void)re_fprintf(f, "#module\t\t\t" MOD_PRE "silk" MOD_EXT "\n");
 	(void)re_fprintf(f, "#module\t\t\t" MOD_PRE "amr" MOD_EXT "\n");
 	(void)re_fprintf(f, "#module\t\t\t" MOD_PRE "g7221" MOD_EXT "\n");
@@ -626,9 +630,12 @@ int config_write_template(const char *file, const struct config *cfg)
 	(void)re_fprintf(f, "\n# Audio driver Modules\n");
 #if defined (ANDROID)
 	(void)re_fprintf(f, "module\t\t\t" MOD_PRE "opensles" MOD_EXT "\n");
+#elif defined (SLPLUGIN)
+	(void)re_fprintf(f, "module\t\t\t" MOD_PRE "effect" MOD_EXT "\n");
+#elif defined (SLIVE)
+	(void)re_fprintf(f, "module\t\t\t" MOD_PRE "effectlive" MOD_EXT "\n");
 #elif defined (DARWIN)
-	(void)re_fprintf(f, "module\t\t\t" MOD_PRE "coreaudio" MOD_EXT "\n");
-	(void)re_fprintf(f, "#module\t\t\t" MOD_PRE "audiounit" MOD_EXT "\n");
+	(void)re_fprintf(f, "module\t\t\t" MOD_PRE "audiounit" MOD_EXT "\n");
 #elif defined (FREEBSD)
 	(void)re_fprintf(f, "module\t\t\t" MOD_PRE "oss" MOD_EXT "\n");
 #elif defined (OPENBSD)
@@ -705,23 +712,28 @@ int config_write_template(const char *file, const struct config *cfg)
 	(void)re_fprintf(f, "# Temporary Modules (loaded then unloaded)\n");
 	(void)re_fprintf(f, "\n");
 	(void)re_fprintf(f, "module_tmp\t\t" MOD_PRE "uuid" MOD_EXT "\n");
-	(void)re_fprintf(f, "module_tmp\t\t" MOD_PRE "account" MOD_EXT "\n");
+	(void)re_fprintf(f, "#module_tmp\t\t" MOD_PRE "account" MOD_EXT "\n");
 	(void)re_fprintf(f, "\n");
 
 	(void)re_fprintf(f, "\n#------------------------------------"
 			 "------------------------------------------\n");
 	(void)re_fprintf(f, "# Application Modules\n");
 	(void)re_fprintf(f, "\n");
-	(void)re_fprintf(f, "module_app\t\t" MOD_PRE "auloop"MOD_EXT"\n");
-	(void)re_fprintf(f, "module_app\t\t"  MOD_PRE "contact"MOD_EXT"\n");
-	(void)re_fprintf(f, "module_app\t\t"  MOD_PRE "debug_cmd"MOD_EXT"\n");
-	(void)re_fprintf(f, "module_app\t\t"  MOD_PRE "menu"MOD_EXT"\n");
+#ifdef SLIVE
+	(void)re_fprintf(f, "module_app\t\t" MOD_PRE "applive"MOD_EXT"\n");
+#else
+	(void)re_fprintf(f, "module_app\t\t" MOD_PRE "webapp"MOD_EXT"\n");
+#endif
+	(void)re_fprintf(f, "#module_app\t\t" MOD_PRE "auloop"MOD_EXT"\n");
+	(void)re_fprintf(f, "#module_app\t\t"  MOD_PRE "contact"MOD_EXT"\n");
+	(void)re_fprintf(f, "#module_app\t\t"  MOD_PRE "debug_cmd"MOD_EXT"\n");
+	(void)re_fprintf(f, "#module_app\t\t"  MOD_PRE "menu"MOD_EXT"\n");
 	(void)re_fprintf(f, "#module_app\t\t"  MOD_PRE "mwi"MOD_EXT"\n");
 	(void)re_fprintf(f, "#module_app\t\t" MOD_PRE "natbd"MOD_EXT"\n");
 	(void)re_fprintf(f, "#module_app\t\t" MOD_PRE "presence"MOD_EXT"\n");
 	(void)re_fprintf(f, "#module_app\t\t" MOD_PRE "syslog"MOD_EXT"\n");
 #ifdef USE_VIDEO
-	(void)re_fprintf(f, "module_app\t\t" MOD_PRE "vidloop"MOD_EXT"\n");
+	(void)re_fprintf(f, "#module_app\t\t" MOD_PRE "vidloop"MOD_EXT"\n");
 #endif
 	(void)re_fprintf(f, "\n");
 
@@ -729,7 +741,7 @@ int config_write_template(const char *file, const struct config *cfg)
 			 "------------------------------------------\n");
 	(void)re_fprintf(f, "# Module parameters\n");
 	(void)re_fprintf(f, "\n");
-
+#if 0
 	(void)re_fprintf(f, "\n");
 	(void)re_fprintf(f, "cons_listen\t\t0.0.0.0:5555\n");
 
@@ -751,6 +763,9 @@ int config_write_template(const char *file, const struct config *cfg)
 
 	(void)re_fprintf(f, "\n# Opus codec parameters\n");
 	(void)re_fprintf(f, "opus_bitrate\t\t28000 # 6000-510000\n");
+#endif
+	(void)re_fprintf(f, "\n# Opus codec parameters\n");
+	(void)re_fprintf(f, "opus_bitrate\t\t64000\n");
 
 	(void)re_fprintf(f,
 			"\n# Selfview\n"
@@ -759,8 +774,8 @@ int config_write_template(const char *file, const struct config *cfg)
 
 	(void)re_fprintf(f,
 			"\n# ICE\n"
-			"ice_turn\t\tno\n"
-			"ice_debug\t\tno\n"
+			"ice_turn\t\tyes\n"
+			"ice_debug\t\tyes\n"
 			"ice_nomination\t\tregular\t# {regular,aggressive}\n"
 			"ice_mode\t\tfull\t# {full,lite}\n");
 
