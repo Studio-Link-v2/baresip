@@ -484,7 +484,6 @@ static int core_config_template(struct re_printf *pf, const struct config *cfg)
 			  "\n# Network\n"
 			  "#dns_server\t\t10.0.0.1:53\n"
 			  "#net_interface\t\t%H\n",
-			  cfg->avt.jbuf_del.min, cfg->avt.jbuf_del.max,
 			  default_interface_print, NULL);
 
 #ifdef USE_VIDEO
