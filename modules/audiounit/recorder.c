@@ -114,6 +114,11 @@ int audiounit_recorder_alloc(struct ausrc_st **stp, const struct ausrc *as,
 		kAudioHardwarePropertyDefaultInputDevice,
 		kAudioObjectPropertyScopeGlobal,
 		kAudioObjectPropertyElementMaster };
+	AudioObjectPropertyAddress srateAddress = {
+		kAudioDevicePropertyNominalSampleRate,
+		kAudioObjectPropertyScopeGlobal,
+		kAudioObjectPropertyElementMaster };
+	Float64 sampleRate = 48000.0;
 #endif
 	Float64 hw_srate = 0.0;
 	UInt32 hw_size = sizeof(hw_srate);
@@ -176,6 +181,21 @@ int audiounit_recorder_alloc(struct ausrc_st **stp, const struct ausrc *as,
 			sizeof(inputDevice));
 	if (ret)
 		goto out;
+
+	ret = AudioObjectSetPropertyData(inputDevice,
+			&srateAddress,
+			0,
+			NULL,
+			sizeof(sampleRate),
+			&sampleRate);
+	if (!ret) {
+		ret = AudioUnitSetProperty(st->au,
+				kAudioUnitProperty_SampleRate,
+				kAudioUnitScope_Input,
+				0,
+				&sampleRate,
+				sizeof(sampleRate));
+	}
 #endif
 
 	fmt.mSampleRate       = prm->srate;
