@@ -175,10 +175,10 @@ int conf_path_get(char *path, size_t sz)
 #endif
 
 
-#ifdef SLPLUGIN
+#if defined (SLPLUGIN)
 	if (re_snprintf(path, sz, "%s" DIR_SEP ".studio-link-plugin", buf) < 0)
 		return ENOMEM;
-#elif SLIVE
+#elif defined (SLIVE)
 	if (re_snprintf(path, sz, "%s" DIR_SEP ".studio-link-live", buf) < 0)
 		return ENOMEM;
 #else
