@@ -5,6 +5,19 @@
  */
 
 
+#include <limits.h>
+
+
+/* max bytes in pathname */
+#if defined (PATH_MAX)
+#define FS_PATH_MAX PATH_MAX
+#elif defined (_POSIX_PATH_MAX)
+#define FS_PATH_MAX _POSIX_PATH_MAX
+#else
+#define FS_PATH_MAX 512
+#endif
+
+
 /**
  * RFC 3551:
  *
