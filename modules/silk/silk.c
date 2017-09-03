@@ -237,7 +237,7 @@ static int module_init(void)
 {
 	debug("silk: SILK %s\n", SKP_Silk_SDK_get_version());
 
-	aucodec_register(&silk[0]);
+	aucodec_register(baresip_aucodecl(), &silk[0]);
 
 	return 0;
 }
@@ -254,7 +254,6 @@ static int module_close(void)
 }
 
 
-/** Module exports */
 EXPORT_SYM const struct mod_export DECL_EXPORTS(silk) = {
 	"silk",
 	"codec",

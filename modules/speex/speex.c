@@ -15,6 +15,8 @@
  * @defgroup speex speex
  *
  * The Speex audio codec
+ *
+ * NOTE: The Speex codec has been obsoleted by Opus.
  */
 
 
@@ -494,7 +496,7 @@ static int speex_init(void)
 			  sconf.vad ? "vad" : (sconf.vbr ? "on" : "off"));
 
 	for (i=0; i<ARRAY_SIZE(speexv); i++)
-		aucodec_register(&speexv[i]);
+		aucodec_register(baresip_aucodecl(), &speexv[i]);
 
 	return 0;
 }

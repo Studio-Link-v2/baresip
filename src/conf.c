@@ -352,11 +352,11 @@ int conf_modules(void)
 		goto out;
 	}
 
-	print_populated("audio codec",  list_count(aucodec_list()));
-	print_populated("audio filter", list_count(aufilt_list()));
+	print_populated("audio codec",  list_count(baresip_aucodecl()));
+	print_populated("audio filter", list_count(baresip_aufiltl()));
 #ifdef USE_VIDEO
-	print_populated("video codec",  list_count(vidcodec_list()));
-	print_populated("video filter", list_count(vidfilt_list()));
+	print_populated("video codec",  list_count(baresip_vidcodecl()));
+	print_populated("video filter", list_count(baresip_vidfiltl()));
 #endif
 
  out:
@@ -382,6 +382,5 @@ struct conf *conf_cur(void)
 
 void conf_close(void)
 {
-	mod_close();
 	conf_obj = mem_deref(conf_obj);
 }

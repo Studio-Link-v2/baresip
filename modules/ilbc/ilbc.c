@@ -337,7 +337,7 @@ static int module_init(void)
 	(void)re_snprintf(ilbc_fmtp, sizeof(ilbc_fmtp),
 			  "mode=%d", DEFAULT_MODE);
 
-	aucodec_register(&ilbc);
+	aucodec_register(baresip_aucodecl(), &ilbc);
 	return 0;
 }
 
@@ -349,7 +349,6 @@ static int module_close(void)
 }
 
 
-/** Module exports */
 EXPORT_SYM const struct mod_export DECL_EXPORTS(ilbc) = {
 	"ilbc",
 	"codec",

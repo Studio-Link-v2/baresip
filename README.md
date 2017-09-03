@@ -3,7 +3,7 @@ baresip README
 
 
 Baresip is a portable and modular SIP User-Agent with audio and video support.
-Copyright (c) 2010 - 2016 Creytiv.com
+Copyright (c) 2010 - 2017 Creytiv.com
 Distributed under BSD license
 
 
@@ -255,6 +255,7 @@ mpa           MPA Speech and Audio Codec
 mwi           Message Waiting Indication
 natbd         NAT Behavior Discovery Module
 natpmp        NAT Port Mapping Protocol (NAT-PMP) module
+omx           OpenMAX IL video display module
 opengl        OpenGL video output
 opengles      OpenGLES video output
 opensles      OpenSLES audio driver
@@ -329,6 +330,7 @@ zrtp          ZRTP media encryption module
 * RFC 4867  RTP Payload Format for the AMR and AMR-WB Audio Codecs
 * RFC 4961  Symmetric RTP / RTP Control Protocol (RTCP)
 * RFC 5168  XML Schema for Media Control
+* RFC 5285  A General Mechanism for RTP Header Extensions
 * RFC 5506  Support for Reduced-Size RTCP
 * RFC 5574  RTP Payload Format for the Speex Codec
 * RFC 5576  Source-Specific Media Attributes in SDP
@@ -340,6 +342,7 @@ zrtp          ZRTP media encryption module
 * RFC 5764  DTLS Extension to Establish Keys for SRTP
 * RFC 5780  NAT Behaviour Discovery Using STUN
 * RFC 6263  App. Mechanism for Keeping Alive NAT Associated with RTP / RTCP
+* RFC 6464  A RTP Header Extension for Client-to-Mixer Audio Level Indication
 * RFC 6716  Definition of the Opus Audio Codec
 * RFC 6886  NAT Port Mapping Protocol (NAT-PMP)
 * RFC 7587  RTP Payload Format for the Opus Speech and Audio Codec
@@ -389,7 +392,7 @@ zrtp          ZRTP media encryption module
 * NetBSD
 * OpenBSD
 * Solaris
-* Windows
+* Windows (mingw and VS2015)
 
 
 ### Supported versions of C Standard library

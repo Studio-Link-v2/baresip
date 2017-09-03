@@ -150,12 +150,11 @@ static void pcp_resp_handler(int err, struct pcp_msg *msg, void *arg)
 
 	map = pcp_msg_payload(msg);
 
-	info("pcp: %s: mapping granted for %s:"
-	     " internal_port=%u, external_addr=%J (lifetime %u seconds)\n",
+	info("pcp: %s: mapping for %s:"
+	     " internal_port=%u, external_addr=%J\n",
 	     sdp_media_name(m->sdpm),
 	     comp->id==1 ? "RTP" : "RTCP",
-	     map->int_port, &map->ext_addr,
-	     msg->hdr.lifetime);
+	     map->int_port, &map->ext_addr);
 
 	/* Update SDP media with external IP-address mapping */
 	if (comp->id == 1)
@@ -337,17 +336,15 @@ static int module_init(void)
 
 	info("pcp: using PCP server at %J\n", &pcp_srv);
 
-#if 1
-	/* todo: if multiple applications are listening on port 5350
+	/* NOTE: if multiple applications are listening on port 5350
 	   then this will not work */
 	err = pcp_listen(&lsnr, &pcp_srv, pcp_msg_handler, 0);
 	if (err) {
 		info("pcp: could not enable listener: %m\n", err);
 		err = 0;
 	}
-#endif
 
-	return mnat_register(&mnat, "pcp", NULL,
+	return mnat_register(&mnat, baresip_mnatl(), "pcp", NULL,
 			     session_alloc, media_alloc, NULL);
 }
 

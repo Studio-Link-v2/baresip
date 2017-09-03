@@ -1,3 +1,291 @@
+2017-06-24 Alfred E. Heggestad <alfred.heggestad@gmail.com>
+
+	* Version 0.5.4
+
+	* GIT URL: https://github.com/alfredh/baresip.git
+	* GIT tag: v0.5.4
+	* NOTE: Requires libre v0.5.4 or later
+	        Requires librem v0.5.0 or later
+
+	* config:
+	  - audio_level  yes|no    Enable audio level RTP extension
+
+	* baresip-core:
+	  - add support for Client-to-Mixer Audio Level Indication (RFC 6464)
+	  - add support for RTP Header Extensions (RFC 5285)
+	  - module: dont load same static module twice
+	  - ua: add ua_progress()
+	  - ua: check for Accept header in incoming OPTIONS request
+	  - use a dummy RTP port for incoming OPTIONS (ref #265)
+	  - vidcodec: make the API re-entrant
+	  - vidfilt: make the API re-entrant
+	  - vidisp: make the API re-entrant
+	  - vidsrc: make the API re-entrant
+
+	* selftest:
+	  - add test for audio level indication in call
+	  - add test for call progress
+
+	* Modules:
+
+	* (all video modules updated with API-changes)
+
+	* zrtp: check for RTP packet in send handler (ref #262)
+		(thanks to MobiSciLab for reporting the bug)
+
+		- registered zrtp_log function with zrtp engine
+		- improved info message on how to verify remote peer
+		- improved setting and printing of zrtp cache file
+		(thanks Juha Heinanen)
+
+
+2017-05-14 Alfred E. Heggestad <alfred.heggestad@gmail.com>
+
+	* Version 0.5.3
+
+	* GIT URL: https://github.com/alfredh/baresip.git
+	* GIT tag: v0.5.3
+	* NOTE: Requires libre v0.5.3 or later
+	        Requires librem v0.5.0 or later
+
+	* config:
+	  - (no changes)
+
+	* build:
+	  - detect jack module (thanks Tony Langley)
+	  - Updated MSVS projects to vs2015 (thanks Mikhail Barg)
+
+	* baresip-core:
+	  - aulevel: add aulevel_calc_dbov()
+	  - audio: Set correct clock rate for telephone events
+		   (thanks Jan Hoffmann)
+	  - play: Add gapless repeat for tone playback (thanks Jan Hoffmann)
+
+	* selftest:
+	  - add tests for aulevel
+	  - add tests for audio player
+	  - add mock aucodec/auplay
+
+	* Modules:
+
+	* gst_video1: Tune x264enc for low latency (thanks Jonathan Sieber)
+
+	* httpd: fix a crash
+
+	* ice: update to latest libre ICE-api
+
+	* omx: Fixed some problems on OMX/RaspberryPi (thanks Jonathan Sieber)
+
+	* srtp: fix SRTP for early-media (thanks Jan Hoffmann)
+
+	* vumeter: use aulevel_calc_dbov to calculate signal energy
+
+	* zrtp: update to latest libzrtp from freeswitch (thanks Juha Heinanen)
+
+
+2017-04-07 Alfred E. Heggestad <alfred.heggestad@gmail.com>
+
+	* Version 0.5.2
+
+	* GIT URL: https://github.com/alfredh/baresip.git
+	* GIT tag: v0.5.2
+	* NOTE: Requires libre v0.5.0 or later
+	        Requires librem v0.5.0 or later
+
+	* new modules:
+	  - omx    OpenMAX IL video display module (thanks Jonathan Sieber)
+
+	* config:
+	  - (no changes)
+
+	* baresip-core:
+	  - aucodec: make the API re-entrant
+	  - aufilt: make the API re-entrant
+	  - auplay: make the API re-entrant
+	  - ausrc: make the API re-entrant
+	  - video: using a video-source is now optional
+
+	* Modules:
+
+	* avformat: add pixelformat AV_PIX_FMT_YUVJ420P (Thanks Gary Metalle)
+
+	* cairo: print picture info, use grey background
+
+	* dtmfio: check fd before calling fclose (thanks Richard Perez)
+
+	* h265: enable YUV444P pixelformat
+
+	* oss: fix build for Solaris 11
+
+	* speex: mark the module as deprecated, see speex.org
+
+
+2017-03-04 Alfred E. Heggestad <alfred.heggestad@gmail.com>
+
+	* Version 0.5.1
+
+	* GIT URL: https://github.com/alfredh/baresip.git
+	* GIT tag: v0.5.1
+	* NOTE: Requires libre v0.5.0 or later
+	        Requires librem v0.5.0 or later
+
+	* new modules:
+
+	* config:
+	  - stunuser		STUN username for STUN/TURN/ICE
+	  - stunpass		STUN password for STUN/TURN/ICE
+	  - snd_path		Path to sndfile audio dump files
+
+	* baresip-core:
+	  - account: add more accessor functions
+	  - account: add 'stunuser' and 'stunpass'
+	  - commands: make the struct commands opaque
+	  - message: make the API re-entrant, multiple listeners
+	  - menc: make the API re-entrant
+	  - mnat: make the API re-entrant
+
+	* selftest:
+	  - add tests for account
+	  - add tests for message
+
+	* Modules:
+
+	* amr: use MOD-CFLAGS instead of global CFLAGS
+
+	* avcodec: added optional config 'avcodec_h264dec' to specify hardware
+		   accellerated FFmpeg decoder (thanks Harald Gutmann)
+
+	* avformat: remove blocking sleep, use packet timestamp to
+		    pace video stream (thanks Harald Gutmann)
+
+	* debug_cmd: add OpenSSL version to systems info
+
+	* gtk: fix build where USE_NOTIFICATIONS is not defined
+	       get rid of system header warnings by using -isystem
+
+	* httpd: add support for un-escaping of URL parameters
+		 (thanks to elektm93)
+
+	* menu: add new command 'ausrc' to switch audio source
+		add new command 'auplay' to switch audio player
+
+	* sdl2: add more pixelformats (ref #202)
+		(thanks Harald Gutmann)
+
+	* sndfile: add config to specify path for dump files (thanks Elektm93)
+		   add test for sndfile on *BSD. (#194) (thanks jungle-boogie)
+
+	* swscale: get dst-size from config (ref #203)
+
+	* v4l2_codec: Video device selection bug (#218)
+		      (thanks Richard Perez)
+
+
+2016-12-23 Alfred E. Heggestad <alfred.heggestad@gmail.com>
+
+	* Version 0.5.0
+
+	* GIT URL: https://github.com/alfredh/baresip.git
+	* GIT tag: v0.5.0
+	* NOTE: Requires libre v0.5.0 or later
+	        Requires librem v0.5.0 or later
+
+	* new modules:
+	  - av1		Experimental AV1 video codec
+	  - debug_cmd	Debug commands for advanced users
+	  - pcp		Port Control Protocol (PCP) for NAT traversal
+	  - swscale	Video scaling using FFmpeg's libswscale
+
+	* config:
+	  - call_max_calls	Maximum number of calls per account
+
+	* baresip-core:
+	  - call: add multiple lines
+	  - call: start video on reinvite (thanks Gary Metalle)
+	  - cmd: add support for long commands
+	  - cmd: make it re-entrant
+	  - config: add some modules to template (thanks Dmitrij D. Czarkoff)
+	  - contact: make it re-entrant
+	  - play: make it re-entrant
+	  - vidcodec: add a intraframe-flag to api
+	  - video: resend FIR until Intra frame received
+
+	* selftest:
+	  - add test for DTMF in call
+	  - add test for contacts
+	  - add test for long commands
+	  - add test for maximum calls
+	  - add test for multiple calls
+	  - add test for video call
+	  - add audio-source mock
+	  - add video-codec mock
+	  - add video-display mock
+	  - add video-source mock
+
+	* Modules:
+
+	* aufile: convert samples from little-endian to host-endian
+
+	* auloop: use long commands /auloop and /auloop_stop
+
+	* av1: new module for Experimental AV1 video codec
+
+	* avcodec: add config option 'avcodec_h264enc' to set encoder name
+		   (thanks to @hargut)
+
+	* avformat: fix init and warnings (thanks Maciej Koman)
+
+	* b2bua: use long command /b2bua
+
+	* contact: use long commands
+
+	* debug_cmd: new module for advanced debug commands
+
+	* g7221: expose spandsp api (thanks to Steve Underwood)
+
+	* gtk: use long command /gtk
+
+	* h265: add 'profile-id=1' to SDP
+
+	* menu: add long commands
+		add command 'line' or '@' to set current call
+
+	* opengl: fix deprecated warnings on OSX 10.12
+
+	* opensles: add support for stereo
+		    (thanks to Juha Heinanen and Vijay Pratap Singh)
+
+	* opus: add support for SDP parameter mirroring
+		(thanks to Sveriges Radio)
+
+	* pcp: new module for Port Control Protocol (PCP) NAT traversal
+	       requires librew (https://github.com/alfredh/rew)
+
+	* plc: expose spandsp api (thanks to Steve Underwood)
+
+	* presence: add long commands /presence_{on,off}line
+
+	* snapshot: use long commands (thanks Dmitrij D. Czarkoff)
+
+	* sndio: use driver-suggested buffer size (thanks Dmitrij D. Czarkoff)
+
+	* swscale: new module for video filter using libswscale
+
+	* v4l2: pick up VID_FMT_NV12 and VID_FMT_NV21 formats as well (#176)
+		don't check for native/emulated format (#179)
+		(thanks Dmitrij D. Czarkoff)
+
+	* vidloop: use long commands
+
+	* vp8: add 'intra' parameter to decoder api
+	       fix building with old versions of libvpx
+
+	* wincons: graceful closing of thread (fixes #151)
+		   (thanks to @GGGO)
+
+	* zrtp: use long command
+
+
 2016-07-22 Alfred E. Heggestad <aeh@db.org>
 
 	* Version 0.4.20

@@ -28,6 +28,10 @@ struct cmd_ctx {
 	bool is_long;
 };
 
+struct commands {
+	struct list cmdl;        /**< List of command blocks (struct cmds) */
+};
+
 
 static int cmd_print_all(struct re_printf *pf,
 			 const struct commands *commands,
@@ -48,6 +52,14 @@ static void ctx_destructor(void *arg)
 	struct cmd_ctx *ctx = arg;
 
 	mem_deref(ctx->mb);
+}
+
+
+static void commands_destructor(void *data)
+{
+	struct commands *commands = data;
+
+	list_flush(&commands->cmdl);
 }
 
 
@@ -137,9 +149,9 @@ static const char *cmd_name(char *buf, size_t sz, const struct cmd *cmd)
 }
 
 
-static size_t get_match(const struct commands *commands,
-			const struct cmd **cmdp,
-			const char *str, size_t len)
+static size_t get_match_long(const struct commands *commands,
+			     const struct cmd **cmdp,
+			     const char *str, size_t len)
 {
 	struct le *le;
 	size_t nmatch = 0;
@@ -222,12 +234,9 @@ static int editor_input(struct commands *commands, struct mbuf *mb, char key,
 			if (err)
 				return err;
 
-			n = get_match(commands, &cmd,
-				      (char *)mb->buf, mb->end);
+			n = get_match_long(commands, &cmd,
+					   (char *)mb->buf, mb->end);
 			if (n == 1 && cmd) {
-
-				re_printf("replace: %b -> %s\n",
-					  mb->buf, mb->end, cmd->name);
 
 				mb->pos = 0;
 				mbuf_write_str(mb, cmd->name);
@@ -706,21 +715,20 @@ int cmd_print(struct re_printf *pf, const struct commands *commands)
 }
 
 
-int cmd_init(struct commands *commands)
+int cmd_init(struct commands **commandsp)
 {
-	if (!commands)
+	struct commands *commands;
+
+	if (!commandsp)
 		return EINVAL;
+
+	commands = mem_zalloc(sizeof(*commands), commands_destructor);
+	if (!commands)
+		return ENOMEM;
 
 	list_init(&commands->cmdl);
 
+	*commandsp = commands;
+
 	return 0;
-}
-
-
-void cmd_close(struct commands *commands)
-{
-	if (!commands)
-		return;
-
-	list_flush(&commands->cmdl);
 }

@@ -3,6 +3,9 @@
  *
  * Copyright (C) 2010 Creytiv.com
  */
+#ifdef SOLARIS
+#define __EXTENSIONS__ 1
+#endif
 #include <getopt.h>
 #include <re.h>
 #include <baresip.h>
@@ -19,6 +22,8 @@ struct test {
 #define TEST(a) {a, #a}
 
 static const struct test tests[] = {
+	TEST(test_account),
+	TEST(test_aulevel),
 	TEST(test_call_af_mismatch),
 	TEST(test_call_answer),
 	TEST(test_call_answer_hangup_a),
@@ -28,12 +33,20 @@ static const struct test tests[] = {
 	TEST(test_call_multiple),
 	TEST(test_call_max),
 	TEST(test_call_dtmf),
+	TEST(test_call_aulevel),
+	TEST(test_call_progress),
+#ifdef USE_VIDEO
+	TEST(test_call_video),
+	TEST(test_video),
+#endif
 	TEST(test_cmd),
 	TEST(test_cmd_long),
 	TEST(test_contact),
 	TEST(test_cplusplus),
+	TEST(test_message),
 	TEST(test_mos),
 	TEST(test_network),
+	TEST(test_play),
 	TEST(test_ua_alloc),
 	TEST(test_ua_options),
 	TEST(test_ua_register),

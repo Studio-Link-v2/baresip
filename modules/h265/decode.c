@@ -29,7 +29,7 @@ enum {
 struct fu {
 	unsigned s:1;
 	unsigned e:1;
-	unsigned type:5;
+	unsigned type:6;
 };
 
 struct viddec_state {
@@ -309,11 +309,9 @@ int h265_decode(struct viddec_state *vds, struct vidframe *frame,
 		fmt = VID_FMT_YUV420P;
 		break;
 
-#if 0
 	case AV_PIX_FMT_YUV444P:
-		fmt = VID_FMT_YUV444;
+		fmt = VID_FMT_YUV444P;
 		break;
-#endif
 
 	default:
 		warning("h265: decode: bad pixel format (%i) (%s)\n",

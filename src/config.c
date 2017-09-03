@@ -50,6 +50,7 @@ static struct config core_config = {
 		0,
 		false,
 		AUDIO_MODE_POLL,
+		false,
 	},
 
 #ifdef USE_VIDEO
@@ -60,6 +61,7 @@ static struct config core_config = {
 		352, 288,
 		500000,
 		25,
+		true,
 	},
 #endif
 
@@ -195,6 +197,8 @@ int config_parse_conf(struct config *cfg, const struct conf *conf)
 	    0 == conf_get(conf, "audio_player", &ap))
 		cfg->audio.src_first = as.p < ap.p;
 
+	(void)conf_get_bool(conf, "audio_level", &cfg->audio.level);
+
 #ifdef USE_VIDEO
 	/* Video */
 	(void)conf_get_csv(conf, "video_source",
@@ -209,6 +213,7 @@ int config_parse_conf(struct config *cfg, const struct conf *conf)
 	}
 	(void)conf_get_u32(conf, "video_bitrate", &cfg->video.bitrate);
 	(void)conf_get_u32(conf, "video_fps", &cfg->video.fps);
+	(void)conf_get_bool(conf, "video_fullscreen", &cfg->video.fullscreen);
 #else
 	(void)size;
 #endif
@@ -277,6 +282,7 @@ int config_print(struct re_printf *pf, const struct config *cfg)
 			 "ausrc_srate\t\t%u\n"
 			 "auplay_channels\t\t%u\n"
 			 "ausrc_channels\t\t%u\n"
+			 "audio_level\t\t%s\n"
 			 "\n"
 #ifdef USE_VIDEO
 			 "# Video\n"
@@ -320,6 +326,7 @@ int config_print(struct re_printf *pf, const struct config *cfg)
 			 range_print, &cfg->audio.channels,
 			 cfg->audio.srate_play, cfg->audio.srate_src,
 			 cfg->audio.channels_play, cfg->audio.channels_src,
+			 cfg->audio.level ? "yes" : "no",
 
 #ifdef USE_VIDEO
 			 cfg->video.src_mod, cfg->video.src_dev,
@@ -447,6 +454,7 @@ static int core_config_template(struct re_printf *pf, const struct config *cfg)
 			  "#auplay_srate\t\t48000\n"
 			  "#ausrc_channels\t\t0\n"
 			  "#auplay_channels\t\t0\n"
+			  "audio_level\t\tno\n"
 			  ,
 			  poll_method_name(poll_method_best()),
 			  cfg->call.local_timeout,
@@ -464,7 +472,8 @@ static int core_config_template(struct re_printf *pf, const struct config *cfg)
 			  "#video_display\t\t%s\n"
 			  "video_size\t\t%dx%d\n"
 			  "video_bitrate\t\t%u\n"
-			  "video_fps\t\t%u\n",
+			  "video_fps\t\t%u\n"
+			  "video_fullscreen\t\tyes\n",
 			  default_video_device(),
 			  default_video_display(),
 			  cfg->video.width, cfg->video.height,

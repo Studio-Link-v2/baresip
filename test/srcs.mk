@@ -8,13 +8,20 @@
 #
 # Test-cases:
 #
+TEST_SRCS	+= account.c
+TEST_SRCS	+= aulevel.c
+TEST_SRCS	+= call.c
 TEST_SRCS	+= cmd.c
 TEST_SRCS	+= contact.c
-TEST_SRCS	+= ua.c
 TEST_SRCS	+= cplusplus.c
-TEST_SRCS	+= call.c
+TEST_SRCS	+= message.c
 TEST_SRCS	+= mos.c
 TEST_SRCS	+= net.c
+TEST_SRCS	+= play.c
+TEST_SRCS	+= ua.c
+ifneq ($(USE_VIDEO),)
+TEST_SRCS	+= video.c
+endif
 
 
 #
@@ -33,8 +40,14 @@ ifneq ($(USE_TLS),)
 TEST_SRCS	+= mock/cert.c
 endif
 
+TEST_SRCS	+= mock/mock_aucodec.c
+TEST_SRCS	+= mock/mock_auplay.c
 TEST_SRCS	+= mock/mock_ausrc.c
-
+ifneq ($(USE_VIDEO),)
+TEST_SRCS	+= mock/mock_vidsrc.c
+TEST_SRCS	+= mock/mock_vidcodec.c
+TEST_SRCS	+= mock/mock_vidisp.c
+endif
 
 TEST_SRCS	+= test.c
 

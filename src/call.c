@@ -64,7 +64,7 @@ struct call {
 	time_t time_start;        /**< Time when call started               */
 	time_t time_conn;         /**< Time when call initiated             */
 	time_t time_stop;         /**< Time when call stopped               */
-	bool outgoing;
+	bool outgoing;            /**< True if outgoing, false if incoming  */
 	bool got_offer;           /**< Got SDP Offer from Peer              */
 	bool on_hold;             /**< True if call is on hold              */
 	struct mnat_sess *mnats;  /**< Media NAT session                    */
@@ -76,8 +76,8 @@ struct call {
 	call_dtmf_h *dtmfh;       /**< DTMF handler                         */
 	void *arg;                /**< Handler argument                     */
 
-	struct config_avt config_avt;
-	struct config_call config_call;
+	struct config_avt config_avt;    /**< AVT config                    */
+	struct config_call config_call;  /**< Call config                   */
 
 	uint32_t rtp_timeout_ms;  /**< RTP Timeout in [ms]                  */
 	uint32_t linenum;         /**< Line number from 1 to N              */
@@ -158,7 +158,7 @@ static void call_stream_start(struct call *call, bool active)
 					 sc->params);
 		err |= video_decoder_set(call->video, sc->data, sc->pt,
 					 sc->rparams);
-		if (!err) {
+		if (!err && !video_is_started(call->video)) {
 			err = video_start(call->video, call->peer_uri);
 		}
 		if (err) {
@@ -292,6 +292,8 @@ static int update_media(struct call *call)
 	struct le *le;
 	int err = 0;
 
+	debug("call: update media\n");
+
 	/* media attributes */
 	audio_sdp_attr_decode(call->audio);
 
@@ -332,10 +334,20 @@ static int update_media(struct call *call)
 					sc->pt, sc->params);
 		if (err) {
 			warning("call: video stream error: %m\n", err);
+			return err;
+		}
+
+		if (!video_is_started(call->video)) {
+			err = video_start(call->video, call->peer_uri);
+			if (err) {
+				warning("call: update: failed to"
+					" start video (%m)\n", err);
+			}
 		}
 	}
 	else if (call->video) {
 		info("video stream is disabled..\n");
+		video_stop(call->video);
 	}
 #endif
 
@@ -496,6 +508,7 @@ int call_alloc(struct call **callp, const struct config *cfg, struct list *lst,
 {
 	struct call *call;
 	struct le *le;
+	struct stream_param stream_prm;
 	enum vidmode vidmode = prm ? prm->vidmode : VIDMODE_OFF;
 	bool use_video = true, got_offer = false;
 	int label = 0;
@@ -504,8 +517,11 @@ int call_alloc(struct call **callp, const struct config *cfg, struct list *lst,
 	if (!cfg || !local_uri || !acc || !ua || !prm)
 		return EINVAL;
 
-	debug("call: alloc with params laddr=%j, af=%s\n",
-	      &prm->laddr, net_af2name(prm->af));
+	debug("call: alloc with params laddr=%j, af=%s, use_rtp=%d\n",
+	      &prm->laddr, net_af2name(prm->af), prm->use_rtp);
+
+	memset(&stream_prm, 0, sizeof(stream_prm));
+	stream_prm.use_rtp = prm->use_rtp;
 
 	call = mem_zalloc(sizeof(*call), call_destructor);
 	if (!call)
@@ -574,10 +590,10 @@ int call_alloc(struct call **callp, const struct config *cfg, struct list *lst,
 	}
 
 	/* Audio stream */
-	err = audio_alloc(&call->audio, cfg, call,
+	err = audio_alloc(&call->audio, &stream_prm, cfg, call,
 			  call->sdp, ++label,
 			  acc->mnat, call->mnats, acc->menc, call->mencs,
-			  acc->ptime, account_aucodecl(call->acc),
+			  acc->ptime, account_aucodecl(call->acc), !got_offer,
 			  audio_event_handler, audio_error_handler, call);
 	if (err)
 		goto out;
@@ -587,11 +603,14 @@ int call_alloc(struct call **callp, const struct config *cfg, struct list *lst,
 	   video source or video display */
 	use_video = (vidmode != VIDMODE_OFF)
 		&& (list_head(account_vidcodecl(call->acc)) != NULL)
-		&& (NULL != vidsrc_find(NULL) || NULL != vidisp_find(NULL));
+		&& (NULL != vidsrc_find(baresip_vidsrcl(), NULL)
+		    || NULL != vidisp_find(baresip_vidispl(), NULL));
+
+	debug("call: use_video=%d\n", use_video);
 
 	/* Video stream */
 	if (use_video) {
- 		err = video_alloc(&call->video, cfg,
+		err = video_alloc(&call->video, &stream_prm, cfg,
 				  call, call->sdp, ++label,
 				  acc->mnat, call->mnats,
 				  acc->menc, call->mencs,
@@ -1059,8 +1078,11 @@ static int sipsess_offer_handler(struct mbuf **descp,
 
 		/* Decode SDP Offer */
 		err = sdp_decode(call->sdp, msg->mb, true);
-		if (err)
+		if (err) {
+			warning("call: reinvite: could not decode SDP offer:"
+				" %m\n", err);
 			return err;
+		}
 
 		err = update_media(call);
 		if (err)
@@ -1459,15 +1481,18 @@ static void sipsess_progr_handler(const struct sip_msg *msg, void *arg)
 		break;
 	}
 
+	call_stream_stop(call);
+
+	if (media)
+		call_stream_start(call, false);
+
 	if (media)
 		call_event_handler(call, CALL_EVENT_PROGRESS, call->peer_uri);
 	else
 		call_event_handler(call, CALL_EVENT_RINGING, call->peer_uri);
 
-	call_stream_stop(call);
-
 	if (media)
-		call_stream_start(call, false);
+		update_media(call);
 }
 
 

@@ -29,9 +29,6 @@ static void stream_close(struct stream *strm, int err)
 }
 
 
-/* TODO: should we check RTP per stream, or should we have the
- *       check in struct call instead?
- */
 static void check_rtp_handler(void *arg)
 {
 	struct stream *strm = arg;
@@ -148,6 +145,61 @@ static void stream_destructor(void *arg)
 }
 
 
+static void handle_rtp(struct stream *s, const struct rtp_header *hdr,
+		       struct mbuf *mb)
+{
+	struct rtpext extv[8];
+	size_t extc = 0;
+
+	/* RFC 5285 -- A General Mechanism for RTP Header Extensions */
+	if (hdr->ext && hdr->x.len && mb) {
+
+		const size_t pos = mb->pos;
+		const size_t end = mb->end;
+		const size_t ext_stop = mb->pos;
+		size_t ext_len;
+		size_t i;
+		int err;
+
+		if (hdr->x.type != RTPEXT_TYPE_MAGIC) {
+			info("stream: unknown ext type ignored (0x%04x)\n",
+			     hdr->x.type);
+			goto handler;
+		}
+
+		ext_len = hdr->x.len*sizeof(uint32_t);
+		if (mb->pos < ext_len) {
+			warning("stream: corrupt rtp packet,"
+				" not enough space for rtpext of %zu bytes\n",
+				ext_len);
+			return;
+		}
+
+		mb->pos = mb->pos - ext_len;
+		mb->end = ext_stop;
+
+		for (i=0; i<ARRAY_SIZE(extv) && mbuf_get_left(mb); i++) {
+
+			err = rtpext_decode(&extv[i], mb);
+			if (err) {
+				warning("stream: rtpext_decode failed (%m)\n",
+					err);
+				return;
+			}
+		}
+
+		extc = i;
+
+		mb->pos = pos;
+		mb->end = end;
+	}
+
+ handler:
+	s->rtph(hdr, extv, extc, mb, s->arg);
+
+}
+
+
 static void rtp_recv(const struct sa *src, const struct rtp_header *hdr,
 		     struct mbuf *mb, void *arg)
 {
@@ -204,17 +256,17 @@ static void rtp_recv(const struct sa *src, const struct rtp_header *hdr,
 		s->jbuf_started = true;
 
 		if (lostcalc(s, hdr2.seq) > 0)
-			s->rtph(hdr, NULL, s->arg);
+			handle_rtp(s, hdr, NULL);
 
-		s->rtph(&hdr2, mb2, s->arg);
+		handle_rtp(s, &hdr2, mb2);
 
 		mem_deref(mb2);
 	}
 	else {
 		if (lostcalc(s, hdr->seq) > 0)
-			s->rtph(hdr, NULL, s->arg);
+			handle_rtp(s, hdr, NULL);
 
-		s->rtph(hdr, mb, s->arg);
+		handle_rtp(s, hdr, mb);
 	}
 }
 
@@ -223,6 +275,8 @@ static void rtcp_handler(const struct sa *src, struct rtcp_msg *msg, void *arg)
 {
 	struct stream *s = arg;
 	(void)src;
+
+	s->ts_last = tmr_jiffies();
 
 	if (s->rtcph)
 		s->rtcph(msg, s->arg);
@@ -273,7 +327,8 @@ static int stream_sock_alloc(struct stream *s, int af)
 }
 
 
-int stream_alloc(struct stream **sp, const struct config_avt *cfg,
+int stream_alloc(struct stream **sp, const struct stream_param *prm,
+		 const struct config_avt *cfg,
 		 struct call *call, struct sdp_session *sdp_sess,
 		 const char *name, int label,
 		 const struct mnat *mnat, struct mnat_sess *mnat_sess,
@@ -284,7 +339,7 @@ int stream_alloc(struct stream **sp, const struct config_avt *cfg,
 	struct stream *s;
 	int err;
 
-	if (!sp || !cfg || !call || !rtph)
+	if (!sp || !prm || !cfg || !call || !rtph)
 		return EINVAL;
 
 	s = mem_zalloc(sizeof(*s), stream_destructor);
@@ -299,11 +354,13 @@ int stream_alloc(struct stream **sp, const struct config_avt *cfg,
 	s->pseq  = -1;
 	s->rtcp  = s->cfg.rtcp_enable;
 
-	err = stream_sock_alloc(s, call_af(call));
-	if (err) {
-		warning("stream: failed to create socket for media '%s'"
-			" (%m)\n", name, err);
-		goto out;
+	if (prm->use_rtp) {
+		err = stream_sock_alloc(s, call_af(call));
+		if (err) {
+			warning("stream: failed to create socket"
+				" for media '%s' (%m)\n", name, err);
+			goto out;
+		}
 	}
 
 	err = str_dup(&s->cname, cname);
@@ -320,7 +377,7 @@ int stream_alloc(struct stream **sp, const struct config_avt *cfg,
 	}
 
 	err = sdp_media_add(&s->sdp, sdp_sess, name,
-			    sa_port(rtp_local(s->rtp)),
+			    s->rtp ? sa_port(rtp_local(s->rtp)) : 9,
 			    (menc && menc->sdp_proto) ? menc->sdp_proto :
 			    sdp_proto_rtpavp);
 	if (err)
@@ -349,7 +406,7 @@ int stream_alloc(struct stream **sp, const struct config_avt *cfg,
 	if (err)
 		goto out;
 
-	if (mnat) {
+	if (mnat && s->rtp) {
 		err = mnat->mediah(&s->mns, mnat_sess, IPPROTO_UDP,
 				   rtp_sock(s->rtp),
 				   s->rtcp ? rtcp_sock(s->rtp) : NULL,
@@ -358,7 +415,7 @@ int stream_alloc(struct stream **sp, const struct config_avt *cfg,
 			goto out;
 	}
 
-	if (menc) {
+	if (menc && s->rtp) {
 		s->menc  = menc;
 		s->mencs = mem_ref(menc_sess);
 		err = menc->mediah(&s->mes, menc_sess,
@@ -419,7 +476,7 @@ static void stream_start_keepalive(struct stream *s)
 }
 
 
-int stream_send(struct stream *s, bool marker, int pt, uint32_t ts,
+int stream_send(struct stream *s, bool ext, bool marker, int pt, uint32_t ts,
 		struct mbuf *mb)
 {
 	int err = 0;
@@ -438,7 +495,7 @@ int stream_send(struct stream *s, bool marker, int pt, uint32_t ts,
 		pt = s->pt_enc;
 
 	if (pt >= 0) {
-		err = rtp_send(s->rtp, sdp_media_raddr(s->sdp),
+		err = rtp_send(s->rtp, sdp_media_raddr(s->sdp), ext,
 			       marker, pt, ts, mb);
 		if (err)
 			s->metric_tx.n_err++;

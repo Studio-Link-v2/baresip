@@ -53,11 +53,49 @@
 		goto out;						\
 	}
 
+#define TEST_MEMCMP(expected, expn, actual, actn)			\
+	if (expn != actn ||						\
+	    0 != memcmp((expected), (actual), (expn))) {		\
+		(void)re_fprintf(stderr, "\n");				\
+		warning("TEST_MEMCMP: %s:%u:"				\
+			" %s(): failed\n",				\
+			__FILE__, __LINE__, __func__);			\
+		test_hexdump_dual(stderr,				\
+				  expected, expn,			\
+				  actual, actn);			\
+		err = EINVAL;						\
+		goto out;						\
+	}
+
+#define TEST_STRCMP(expected, expn, actual, actn)			\
+	if (expn != actn ||						\
+	    0 != memcmp((expected), (actual), (expn))) {		\
+		(void)re_fprintf(stderr, "\n");				\
+		warning("TEST_STRCMP: %s:%u:"				\
+			" failed\n",					\
+			__FILE__, __LINE__);				\
+		(void)re_fprintf(stderr,				\
+				 "expected string: (%zu bytes)\n"	\
+				 "\"%b\"\n",				\
+				 (size_t)(expn),			\
+				 (expected), (size_t)(expn));		\
+		(void)re_fprintf(stderr,				\
+				 "actual string: (%zu bytes)\n"		\
+				 "\"%b\"\n",				\
+				 (size_t)(actn),			\
+				 (actual), (size_t)(actn));		\
+		err = EINVAL;						\
+		goto out;						\
+	}
+
 
 /* helpers */
 
 int re_main_timeout(uint32_t timeout_ms);
 bool test_cmp_double(double a, double b, double precision);
+void test_hexdump_dual(FILE *f,
+		       const void *ep, size_t elen,
+		       const void *ap, size_t alen);
 
 
 #ifdef USE_TLS
@@ -84,6 +122,13 @@ int dns_server_add_srv(struct dns_server *srv, const char *name,
 		       const char *target);
 
 /*
+ * Mock Audio-codec
+ */
+
+void mock_aucodec_register(void);
+void mock_aucodec_unregister(void);
+
+/*
  * Mock Audio-source
  */
 
@@ -92,8 +137,48 @@ struct ausrc;
 int mock_ausrc_register(struct ausrc **ausrcp);
 
 
+/*
+ * Mock Audio-player
+ */
+
+struct auplay;
+
+typedef void (mock_sample_h)(const int16_t *sampv, size_t sampc, void *arg);
+
+int mock_auplay_register(struct auplay **auplayp,
+			 mock_sample_h *sampleh, void *arg);
+
+
+/*
+ * Mock Video-source
+ */
+
+struct vidsrc;
+
+int mock_vidsrc_register(struct vidsrc **vidsrcp);
+
+
+/*
+ * Mock Video-codec
+ */
+
+void mock_vidcodec_register(void);
+void mock_vidcodec_unregister(void);
+
+
+/*
+ * Mock Video-display
+ */
+
+struct vidisp;
+
+int mock_vidisp_register(struct vidisp **vidispp);
+
+
 /* test cases */
 
+int test_account(void);
+int test_aulevel(void);
 int test_cmd(void);
 int test_cmd_long(void);
 int test_contact(void);
@@ -104,8 +189,10 @@ int test_ua_register_dns(void);
 int test_ua_register_auth(void);
 int test_ua_register_auth_dns(void);
 int test_ua_options(void);
+int test_message(void);
 int test_mos(void);
 int test_network(void);
+int test_play(void);
 
 int test_call_answer(void);
 int test_call_reject(void);
@@ -116,6 +203,13 @@ int test_call_rtp_timeout(void);
 int test_call_multiple(void);
 int test_call_max(void);
 int test_call_dtmf(void);
+int test_call_video(void);
+int test_call_aulevel(void);
+int test_call_progress(void);
+
+#ifdef USE_VIDEO
+int test_video(void);
+#endif
 
 
 #ifdef __cplusplus

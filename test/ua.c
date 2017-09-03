@@ -169,7 +169,7 @@ int test_ua_alloc(void)
 	/* make sure we dont have that UA already */
 	ASSERT_TRUE(NULL == uag_find_aor("sip:user@127.0.0.1"));
 
-	err = ua_alloc(&ua, "Foo <sip:user:pass@127.0.0.1>;regint=0");
+	err = ua_alloc(&ua, "Foo <sip:user@127.0.0.1>;regint=0");
 	if (err)
 		return err;
 
@@ -199,8 +199,8 @@ int test_uag_find_param(void)
 
 	ASSERT_TRUE(NULL == uag_find_param("not", "found"));
 
-	err  = ua_alloc(&ua1, "<sip:x:x@127.0.0.1>;regint=0;abc");
-	err |= ua_alloc(&ua2, "<sip:x:x@127.0.0.1>;regint=0;def=123");
+	err  = ua_alloc(&ua1, "<sip:x@127.0.0.1>;regint=0;abc");
+	err |= ua_alloc(&ua2, "<sip:x@127.0.0.1>;regint=0;def=123");
 	if (err)
 		goto out;
 
@@ -363,7 +363,7 @@ int test_ua_register_dns(void)
 
 
 #define USER   "alfredh"
-#define PASS   "password"
+#define PASS   "pass%40word"  /* NOTE: url-encoded */
 #define DOMAIN "localhost"
 
 static int reg_auth(enum sip_transp tp)
@@ -385,7 +385,7 @@ static int reg_auth(enum sip_transp tp)
 	TEST_ERR(err);
 
 	err = user_add(domain_lookup(t.srvv[0], DOMAIN)->ht_usr,
-		       "alfredh", "password", DOMAIN);
+		       "alfredh", "pass@word", DOMAIN);
 	TEST_ERR(err);
 
 	t.srvv[0]->auth_enabled = true;
@@ -685,7 +685,7 @@ int test_ua_options(void)
 	err = sip_transp_laddr(uag_sip(), &laddr, SIP_TRANSP_UDP, NULL);
 	TEST_ERR(err);
 
-	err = ua_alloc(&t.ua, "Foo <sip:user:pass@127.0.0.1>;regint=0");
+	err = ua_alloc(&t.ua, "Foo <sip:user@127.0.0.1>;regint=0");
 	TEST_ERR(err);
 
 	n = re_snprintf(uri, sizeof(uri),

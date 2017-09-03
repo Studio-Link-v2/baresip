@@ -201,7 +201,7 @@ static int module_init(void)
 	unsigned i;
 
 	for (i=0; i<ARRAY_SIZE(isacv); i++)
-		aucodec_register(&isacv[i]);
+		aucodec_register(baresip_aucodecl(), &isacv[i]);
 
 	return 0;
 }
@@ -218,7 +218,6 @@ static int module_close(void)
 }
 
 
-/** Module exports */
 EXPORT_SYM const struct mod_export DECL_EXPORTS(isac) = {
 	"isac",
 	"codec",

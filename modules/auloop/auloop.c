@@ -20,8 +20,8 @@
  *
  * The following commands are available:
  \verbatim
- a       Start audio-loop
- A       Stop audio-loop
+ /auloop         Start audio-loop
+ /auloop_stop    Stop audio-loop
  \endverbatim
  */
 
@@ -184,7 +184,7 @@ static void start_codec(struct audio_loop *al, const char *name)
 	struct auenc_param prm = {PTIME};
 	int err;
 
-	al->ac = aucodec_find(name,
+	al->ac = aucodec_find(baresip_aucodecl(), name,
 			      configv[al->index].srate,
 			      configv[al->index].ch);
 	if (!al->ac) {
@@ -248,7 +248,8 @@ static int auloop_reset(struct audio_loop *al)
 	auplay_prm.srate      = al->srate;
 	auplay_prm.ch         = al->ch;
 	auplay_prm.ptime      = PTIME;
-	err = auplay_alloc(&al->auplay, cfg->audio.play_mod, &auplay_prm,
+	err = auplay_alloc(&al->auplay, baresip_auplayl(),
+			   cfg->audio.play_mod, &auplay_prm,
 			   cfg->audio.play_dev, write_handler, al);
 	if (err) {
 		warning("auloop: auplay %s,%s failed: %m\n",
@@ -260,7 +261,8 @@ static int auloop_reset(struct audio_loop *al)
 	ausrc_prm.srate      = al->srate;
 	ausrc_prm.ch         = al->ch;
 	ausrc_prm.ptime      = PTIME;
-	err = ausrc_alloc(&al->ausrc, NULL, cfg->audio.src_mod,
+	err = ausrc_alloc(&al->ausrc, baresip_ausrcl(),
+			  NULL, cfg->audio.src_mod,
 			  &ausrc_prm, cfg->audio.src_dev,
 			  read_handler, error_handler, al);
 	if (err) {

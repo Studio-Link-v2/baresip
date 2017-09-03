@@ -15,6 +15,9 @@
 #include <libavformat/avformat.h>
 #include <libavdevice/avdevice.h>
 #include <libavcodec/avcodec.h>
+#if LIBAVCODEC_VERSION_INT >= ((53<<16)+(5<<8)+0)
+#include <libavutil/pixdesc.h>
+#endif
 
 
 /**
@@ -47,6 +50,7 @@
 
 #if LIBAVUTIL_VERSION_MAJOR < 52
 #define AV_PIX_FMT_YUV420P PIX_FMT_YUV420P
+#define AV_PIX_FMT_YUVJ420P PIX_FMT_YUVJ420P
 #endif
 
 
@@ -57,6 +61,7 @@ struct vidsrc_st {
 	AVFormatContext *ic;
 	AVCodec *codec;
 	AVCodecContext *ctx;
+	AVRational time_base;
 	struct vidsz sz;
 	vidsrc_frame_h *frameh;
 	void *arg;
@@ -143,8 +148,26 @@ static void handle_packet(struct vidsrc_st *st, AVPacket *pkt)
 		return;
 	}
 
+#if LIBAVCODEC_VERSION_INT >= ((53<<16)+(5<<8)+0)
+	switch (frame->format) {
+
+	case AV_PIX_FMT_YUV420P:
+	case AV_PIX_FMT_YUVJ420P:
+		vf.fmt = VID_FMT_YUV420P;
+		break;
+
+	default:
+		warning("avformat: decode: bad pixel format"
+			" (%i) (%s)\n",
+			frame->format,
+			av_get_pix_fmt_name(frame->format));
+		goto out;
+	}
+#else
+	vf.fmt = VID_FMT_YUV420P;
+#endif
+
 	vf.size = sz;
-	vf.fmt  = VID_FMT_YUV420P;
 	for (i=0; i<4; i++) {
 		vf.data[i]     = frame->data[i];
 		vf.linesize[i] = frame->linesize[i];
@@ -167,9 +190,17 @@ static void *read_thread(void *data)
 {
 	struct vidsrc_st *st = data;
 
+	uint64_t now, ts = tmr_jiffies();
+
 	while (st->run) {
 		AVPacket pkt;
 		int ret;
+
+		sys_msleep(4);
+		now = tmr_jiffies();
+
+		if (ts > now)
+			continue;
 
 		av_init_packet(&pkt);
 
@@ -186,8 +217,7 @@ static void *read_thread(void *data)
 
 		handle_packet(st, &pkt);
 
-		/* simulate framerate */
-		sys_msleep(1000/st->fps);
+		ts += (uint64_t) 1000 * pkt.duration * av_q2d(st->time_base);
 
 	out:
 #if LIBAVCODEC_VERSION_INT >= ((57<<16)+(12<<8)+100)
@@ -214,11 +244,12 @@ static int alloc(struct vidsrc_st **stp, const struct vidsrc *vs,
 	bool found_stream = false;
 	uint32_t i;
 	int ret, err = 0;
+	int input_fps = 0;
 
 	(void)mctx;
 	(void)errorh;
 
-	if (!stp || !size || !frameh)
+	if (!stp || !vs || !prm || !size || !frameh)
 		return EINVAL;
 
 	st = mem_zalloc(sizeof(*st), destructor);
@@ -229,13 +260,7 @@ static int alloc(struct vidsrc_st **stp, const struct vidsrc *vs,
 	st->sz     = *size;
 	st->frameh = frameh;
 	st->arg    = arg;
-
-	if (prm) {
-		st->fps = prm->fps;
-	}
-	else {
-		st->fps = 25;
-	}
+	st->fps    = prm->fps;
 
 	/*
 	 * avformat_open_input() was added in lavf 53.2.0 according to
@@ -250,7 +275,7 @@ static int alloc(struct vidsrc_st **stp, const struct vidsrc *vs,
 	/* Params */
 	memset(&prms, 0, sizeof(prms));
 
-	prms.time_base          = (AVRational){1, st->fps};
+	prms.time_base          = (AVRational){1, prm->fps};
 	prms.channels           = 1;
 	prms.width              = size->w;
 	prms.height             = size->h;
@@ -284,7 +309,27 @@ static int alloc(struct vidsrc_st **stp, const struct vidsrc *vs,
 
 	for (i=0; i<st->ic->nb_streams; i++) {
 		const struct AVStream *strm = st->ic->streams[i];
-		AVCodecContext *ctx = strm->codec;
+		AVCodecContext *ctx;
+		double dfps;
+
+#if LIBAVFORMAT_VERSION_INT >= ((57<<16) + (33<<8) + 100)
+
+		ctx = avcodec_alloc_context3(NULL);
+		if (!ctx) {
+			err = ENOMEM;
+			goto out;
+		}
+
+		ret = avcodec_parameters_to_context(ctx, strm->codecpar);
+		if (ret < 0) {
+			warning("avformat: avcodec_parameters_to_context\n");
+			err = EPROTO;
+			goto out;
+		}
+
+#else
+		ctx = strm->codec;
+#endif
 
 		if (ctx->codec_type != AVMEDIA_TYPE_VIDEO)
 			continue;
@@ -292,12 +337,24 @@ static int alloc(struct vidsrc_st **stp, const struct vidsrc *vs,
 		debug("avformat: stream %u:  %u x %u "
 		      "  time_base=%d/%d\n",
 		      i, ctx->width, ctx->height,
-		      ctx->time_base.num, ctx->time_base.den);
+		      strm->time_base.num, strm->time_base.den);
 
 		st->sz.w   = ctx->width;
 		st->sz.h   = ctx->height;
 		st->ctx    = ctx;
 		st->sindex = strm->index;
+		st->time_base = strm->time_base;
+
+		dfps = av_q2d(strm->avg_frame_rate);
+		input_fps = (int)dfps;
+		if (st->fps != input_fps) {
+			info("avformat: updating %i fps from config to native "
+				"input material fps %i\n", st->fps, input_fps);
+			st->fps = input_fps;
+#if LIBAVFORMAT_VERSION_INT < ((52<<16) + (110<<8) + 0)
+			prms.time_base = (AVRational){1, st->fps};
+#endif
+		}
 
 		if (ctx->codec_id != AV_CODEC_ID_NONE) {
 
@@ -356,7 +413,8 @@ static int module_init(void)
 
 	av_register_all();
 
-	return vidsrc_register(&mod_avf, "avformat", alloc, NULL);
+	return vidsrc_register(&mod_avf, baresip_vidsrcl(),
+			       "avformat", alloc, NULL);
 }
 
 

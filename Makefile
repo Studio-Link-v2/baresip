@@ -13,7 +13,7 @@
 USE_VIDEO := 1
 
 PROJECT	  := baresip
-VERSION   := 0.5.0
+VERSION   := 0.5.4
 DESCR     := "Baresip is a modular SIP User-Agent with audio and video support"
 
 # Verbose and silent build modes
@@ -59,7 +59,6 @@ CXXFLAGS  += $(EXTRA_CXXFLAGS)
 CPPFLAGS += -DHAVE_INTTYPES_H
 
 ifneq ($(LIBREM_PATH),)
-SPLINT_OPTIONS += -I$(LIBREM_PATH)/include
 CLANG_OPTIONS  += -I$(LIBREM_PATH)/include
 endif
 

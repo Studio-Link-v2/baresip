@@ -39,6 +39,10 @@ enum {
 };
 
 
+/* forward declarations */
+struct stream_param;
+
+
 /*
  * Account
  */
@@ -61,7 +65,7 @@ struct account {
 	char *mencid;                /**< Media encryption type              */
 	const struct mnat *mnat;     /**< MNAT module                        */
 	const struct menc *menc;     /**< MENC module                        */
-	char *outbound[2];           /**< Optional SIP outbound proxies      */
+	char *outboundv[2];          /**< Optional SIP outbound proxies      */
 	uint32_t ptime;              /**< Configured packet time in [ms]     */
 	uint32_t regint;             /**< Registration interval in [seconds] */
 	uint32_t pubint;             /**< Publication interval in [seconds]  */
@@ -116,11 +120,12 @@ struct audio;
 typedef void (audio_event_h)(int key, bool end, void *arg);
 typedef void (audio_err_h)(int err, const char *str, void *arg);
 
-int audio_alloc(struct audio **ap, const struct config *cfg,
+int audio_alloc(struct audio **ap, const struct stream_param *stream_prm,
+		const struct config *cfg,
 		struct call *call, struct sdp_session *sdp_sess, int label,
 		const struct mnat *mnat, struct mnat_sess *mnat_sess,
 		const struct menc *menc, struct menc_sess *menc_sess,
-		uint32_t ptime, const struct list *aucodecl,
+		uint32_t ptime, const struct list *aucodecl, bool offerer,
 		audio_event_h *eventh, audio_err_h *errh, void *arg);
 int  audio_start(struct audio *a);
 void audio_stop(struct audio *a);
@@ -161,6 +166,7 @@ struct call_prm {
 	struct sa laddr;
 	enum vidmode vidmode;
 	int af;
+	bool use_rtp;
 };
 
 int  call_alloc(struct call **callp, const struct config *cfg,
@@ -217,7 +223,7 @@ struct mnat {
 	mnat_update_h *updateh;
 };
 
-const struct mnat *mnat_find(const char *id);
+const struct mnat *mnat_find(const struct list *mnatl, const char *id);
 
 
 /*
@@ -272,6 +278,36 @@ int  reg_status(struct re_printf *pf, const struct reg *reg);
 
 
 /*
+ * RTP Header Extensions
+ */
+
+#define RTPEXT_HDR_SIZE        4
+#define RTPEXT_TYPE_MAGIC 0xbede
+
+enum {
+	RTPEXT_ID_MIN  =  1,
+	RTPEXT_ID_MAX  = 14,
+};
+
+enum {
+	RTPEXT_LEN_MIN =  1,
+	RTPEXT_LEN_MAX = 16,
+};
+
+struct rtpext {
+	unsigned id:4;
+	unsigned len:4;
+	uint8_t data[RTPEXT_LEN_MAX];
+};
+
+
+int rtpext_hdr_encode(struct mbuf *mb, size_t num_bytes);
+int rtpext_encode(struct mbuf *mb, unsigned id, unsigned len,
+		  const uint8_t *data);
+int rtpext_decode(struct rtpext *ext, struct mbuf *mb);
+
+
+/*
  * RTP keepalive
  */
 
@@ -298,12 +334,17 @@ struct rtp_header;
 
 enum {STREAM_PRESZ = 4+12}; /* same as RTP_HEADER_SIZE */
 
-typedef void (stream_rtp_h)(const struct rtp_header *hdr, struct mbuf *mb,
-			    void *arg);
+typedef void (stream_rtp_h)(const struct rtp_header *hdr,
+			    struct rtpext *extv, size_t extc,
+			    struct mbuf *mb, void *arg);
 typedef void (stream_rtcp_h)(struct rtcp_msg *msg, void *arg);
 
 typedef void (stream_error_h)(struct stream *strm, int err, void *arg);
 
+/** Common parameters for media stream */
+struct stream_param {
+	bool use_rtp;
+};
 
 /** Defines a generic media stream */
 struct stream {
@@ -339,7 +380,8 @@ struct stream {
 	uint32_t rtp_timeout_ms; /**< RTP Timeout value in [ms]             */
 };
 
-int  stream_alloc(struct stream **sp, const struct config_avt *cfg,
+int  stream_alloc(struct stream **sp, const struct stream_param *prm,
+		  const struct config_avt *cfg,
 		  struct call *call, struct sdp_session *sdp_sess,
 		  const char *name, int label,
 		  const struct mnat *mnat, struct mnat_sess *mnat_sess,
@@ -347,7 +389,7 @@ int  stream_alloc(struct stream **sp, const struct config_avt *cfg,
 		  const char *cname,
 		  stream_rtp_h *rtph, stream_rtcp_h *rtcph, void *arg);
 struct sdp_media *stream_sdpmedia(const struct stream *s);
-int  stream_send(struct stream *s, bool marker, int pt, uint32_t ts,
+int  stream_send(struct stream *s, bool ext, bool marker, int pt, uint32_t ts,
 		 struct mbuf *mb);
 void stream_update(struct stream *s);
 void stream_update_encoder(struct stream *s, int pt_enc);
@@ -416,7 +458,8 @@ struct video;
 
 typedef void (video_err_h)(int err, const char *str, void *arg);
 
-int  video_alloc(struct video **vp, const struct config *cfg,
+int  video_alloc(struct video **vp, const struct stream_param *stream_prm,
+		 const struct config *cfg,
 		 struct call *call, struct sdp_session *sdp_sess, int label,
 		 const struct mnat *mnat, struct mnat_sess *mnat_sess,
 		 const struct menc *menc, struct menc_sess *menc_sess,
@@ -424,6 +467,7 @@ int  video_alloc(struct video **vp, const struct config *cfg,
 		 video_err_h *errh, void *arg);
 int  video_start(struct video *v, const char *peer);
 void video_stop(struct video *v);
+bool video_is_started(const struct video *v);
 int  video_encoder_set(struct video *v, struct vidcodec *vc,
 		       int pt_tx, const char *params);
 int  video_decoder_set(struct video *v, struct vidcodec *vc, int pt_rx,

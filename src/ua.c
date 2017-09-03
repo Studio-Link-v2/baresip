@@ -28,7 +28,7 @@ struct ua {
 	char *cuser;                 /**< SIP Contact username               */
 	char *pub_gruu;              /**< SIP Public GRUU                    */
 	int af;                      /**< Preferred Address Family           */
-	int af_media;
+	int af_media;                /**< Preferred Address Family for media */
 	enum presence_status my_status; /**< Presence Status                 */
 };
 
@@ -51,7 +51,7 @@ static struct {
 	bool use_tcp;                  /**< Use TCP transport               */
 	bool use_tls;                  /**< Use TLS transport               */
 	bool prefer_ipv6;              /**< Force IPv6 transport            */
-	sip_msg_h *subh;
+	sip_msg_h *subh;               /**< Subscribe handler               */
 	ua_exit_h *exith;              /**< UA Exit handler                 */
 	void *arg;                     /**< UA Exit handler argument        */
 	char *eprm;                    /**< Extra UA parameters             */
@@ -82,9 +82,10 @@ static struct {
 
 
 /* prototypes */
-static int  ua_call_alloc(struct call **callp, struct ua *ua,
-			  enum vidmode vidmode, const struct sip_msg *msg,
-			  struct call *xcall, const char *local_uri);
+static int ua_call_alloc(struct call **callp, struct ua *ua,
+			 enum vidmode vidmode, const struct sip_msg *msg,
+			 struct call *xcall, const char *local_uri,
+			 bool use_rtp);
 
 
 /* This function is called when all SIP transactions are done */
@@ -197,7 +198,7 @@ int ua_register(struct ua *ua)
 		struct reg *reg = le->data;
 
 		err = reg_register(reg, reg_uri, params,
-				   acc->regint, acc->outbound[i]);
+				   acc->regint, acc->outboundv[i]);
 		if (err) {
 			warning("ua: SIP register failed: %m\n", err);
 			goto out;
@@ -362,7 +363,7 @@ static void call_event_handler(struct call *call, enum call_event ev,
 		ua_printf(ua, "transferring call to %s\n", str);
 
 		err = ua_call_alloc(&call2, ua, VIDMODE_ON, NULL, call,
-				    call_localuri(call));
+				    call_localuri(call), true);
 		if (!err) {
 			struct pl pl;
 
@@ -410,7 +411,8 @@ static void call_dtmf_handler(struct call *call, char key, void *arg)
 
 static int ua_call_alloc(struct call **callp, struct ua *ua,
 			 enum vidmode vidmode, const struct sip_msg *msg,
-			 struct call *xcall, const char *local_uri)
+			 struct call *xcall, const char *local_uri,
+			 bool use_rtp)
 {
 	const struct network *net = baresip_network();
 	struct call_prm cprm;
@@ -437,6 +439,7 @@ static int ua_call_alloc(struct call **callp, struct ua *ua,
 	sa_cpy(&cprm.laddr, net_laddr_af(net, af));
 	cprm.vidmode = vidmode;
 	cprm.af      = af;
+	cprm.use_rtp = use_rtp;
 
 	err = call_alloc(callp, conf_config(), &ua->calls,
 			 ua->acc->dispname,
@@ -459,20 +462,34 @@ static void handle_options(struct ua *ua, const struct sip_msg *msg)
 	struct sip_contact contact;
 	struct call *call = NULL;
 	struct mbuf *desc = NULL;
+	const struct sip_hdr *hdr;
+	bool accept_sdp = true;
 	int err;
 
 	debug("ua: incoming OPTIONS message from %r (%J)\n",
 	      &msg->from.auri, &msg->src);
 
-	err = ua_call_alloc(&call, ua, VIDMODE_ON, NULL, NULL, NULL);
-	if (err) {
-		(void)sip_treply(NULL, uag.sip, msg, 500, "Call Error");
-		return;
+	/* application/sdp is the default if the
+	   Accept header field is not present */
+	hdr = sip_msg_hdr(msg, SIP_HDR_ACCEPT);
+	if (hdr) {
+		accept_sdp = 0==pl_strcasecmp(&hdr->val, "application/sdp");
 	}
 
-	err = call_sdp_get(call, &desc, true);
-	if (err)
-		goto out;
+	if (accept_sdp) {
+
+		err = ua_call_alloc(&call, ua, VIDMODE_ON, NULL, NULL, NULL,
+				    false);
+		if (err) {
+			(void)sip_treply(NULL, uag.sip, msg,
+					 500, "Call Error");
+			return;
+		}
+
+		err = call_sdp_get(call, &desc, true);
+		if (err)
+			goto out;
+	}
 
 	sip_contact_set(&contact, ua_cuser(ua), &msg->dst, msg->tp);
 
@@ -481,16 +498,17 @@ static void handle_options(struct ua *ua, const struct sip_msg *msg)
 			  "Allow: %s\r\n"
 			  "%H"
 			  "%H"
-			  "Content-Type: application/sdp\r\n"
+			  "%s"
 			  "Content-Length: %zu\r\n"
 			  "\r\n"
 			  "%b",
 			  uag_allowed_methods(),
 			  ua_print_supported, ua,
 			  sip_contact_print, &contact,
-			  mbuf_get_left(desc),
-			  mbuf_buf(desc),
-			  mbuf_get_left(desc));
+			  desc ? "Content-Type: application/sdp\r\n" : "",
+			  desc ? mbuf_get_left(desc) : (size_t)0,
+			  desc ? mbuf_buf(desc) : NULL,
+			  desc ? mbuf_get_left(desc) : (size_t)0);
 	if (err) {
 		warning("ua: options: sip_treplyf: %m\n", err);
 	}
@@ -647,9 +665,9 @@ int ua_alloc(struct ua **uap, const char *aor)
 			goto out;
 		}
 
-		for (i=0; i<ARRAY_SIZE(ua->acc->outbound); i++) {
+		for (i=0; i<ARRAY_SIZE(ua->acc->outboundv); i++) {
 
-			if (ua->acc->outbound[i] && ua->acc->regint) {
+			if (ua->acc->outboundv[i] && ua->acc->regint) {
 				err = reg_add(&ua->regl, ua, (int)i+1);
 				if (err)
 					break;
@@ -776,7 +794,7 @@ int ua_connect(struct ua *ua, struct call **callp,
 	if (err)
 		goto out;
 
-	err = ua_call_alloc(&call, ua, vmode, NULL, NULL, from_uri);
+	err = ua_call_alloc(&call, ua, vmode, NULL, NULL, from_uri, true);
 	if (err)
 		goto out;
 
@@ -847,6 +865,21 @@ int ua_answer(struct ua *ua, struct call *call)
 	}
 
 	return call_answer(call, 200);
+}
+
+
+int ua_progress(struct ua *ua, struct call *call)
+{
+	if (!ua)
+		return EINVAL;
+
+	if (!call) {
+		call = ua_call(ua);
+		if (!call)
+			return ENOENT;
+	}
+
+	return call_progress(call);
 }
 
 
@@ -959,7 +992,7 @@ int ua_options_send(struct ua *ua, const char *uri,
  */
 const char *ua_aor(const struct ua *ua)
 {
-	return ua ? ua->acc->aor : NULL;
+	return ua ? account_aor(ua->acc) : NULL;
 }
 
 
@@ -1001,7 +1034,7 @@ void ua_presence_status_set(struct ua *ua, const enum presence_status status)
 const char *ua_outbound(const struct ua *ua)
 {
 	/* NOTE: we pick the first outbound server, should be rotated? */
-	return ua ? ua->acc->outbound[0] : NULL;
+	return ua ? ua->acc->outboundv[0] : NULL;
 }
 
 
@@ -1016,25 +1049,14 @@ const char *ua_outbound(const struct ua *ua)
  * Current call strategy:
  *
  * We can only have 1 current call. The current call is the one that was
- * added last (end of the list), which is not on-hold
+ * added last (end of the list).
  */
 struct call *ua_call(const struct ua *ua)
 {
-	struct le *le;
-
 	if (!ua)
 		return NULL;
 
-	for (le = ua->calls.tail; le; le = le->prev) {
-
-		struct call *call = le->data;
-
-		/* todo: check if call is on-hold */
-
-		return call;
-	}
-
-	return NULL;
+	return list_ledata(list_tail(&ua->calls));
 }
 
 
@@ -1246,7 +1268,7 @@ static void sipsess_conn_handler(const struct sip_msg *msg, void *arg)
 
 	(void)pl_strcpy(&msg->to.auri, to_uri, sizeof(to_uri));
 
-	err = ua_call_alloc(&call, ua, VIDMODE_ON, msg, NULL, to_uri);
+	err = ua_call_alloc(&call, ua, VIDMODE_ON, msg, NULL, to_uri, true);
 	if (err) {
 		warning("ua: call_alloc: %m\n", err);
 		goto error;
@@ -1273,25 +1295,6 @@ static void net_change_handler(void *arg)
 
 	(void)uag_reset_transp(true, true);
 }
-
-
-static int cmd_quit(struct re_printf *pf, void *unused)
-{
-	int err;
-
-	(void)unused;
-
-	err = re_hprintf(pf, "Quit\n");
-
-	ua_stop_all(false);
-
-	return err;
-}
-
-
-static const struct cmd cmdv[] = {
-	{"quit", 'q', 0, "Quit",                     cmd_quit             },
-};
 
 
 static bool sub_handler(const struct sip_msg *msg, void *arg)
@@ -1373,10 +1376,6 @@ int ua_init(const char *software, bool udp, bool tcp, bool tls,
 	if (err)
 		goto out;
 
-	err = cmd_register(baresip_commands(), cmdv, ARRAY_SIZE(cmdv));
-	if (err)
-		goto out;
-
 	net_change(net, 60, net_change_handler, NULL);
 
  out:
@@ -1393,9 +1392,6 @@ int ua_init(const char *software, bool udp, bool tcp, bool tls,
  */
 void ua_close(void)
 {
-	cmd_unregister(baresip_commands(), cmdv);
-	ui_reset();
-
 	uag.evsock   = mem_deref(uag.evsock);
 	uag.sock     = mem_deref(uag.sock);
 	uag.lsnr     = mem_deref(uag.lsnr);
@@ -1548,6 +1544,11 @@ int ua_print_sip_status(struct re_printf *pf, void *unused)
 
 /**
  * Print all calls for a given User-Agent
+ *
+ * @param pf     Print handler for debug output
+ * @param ua     User-Agent
+ *
+ * @return 0 if success, otherwise errorcode
  */
 int ua_print_calls(struct re_printf *pf, const struct ua *ua)
 {

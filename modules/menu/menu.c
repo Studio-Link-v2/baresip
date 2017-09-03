@@ -35,6 +35,7 @@ static struct le *le_cur;             /**< Current User-Agent (struct ua) */
 
 static struct {
 	struct play *play;
+	struct message_lsnr *message;
 	bool bell;
 
 	struct tmr tmr_redial;        /**< Timer for auto-reconnect       */
@@ -47,6 +48,8 @@ static struct {
 static int  menu_set_incall(bool incall);
 static void update_callstatus(void);
 static void alert_stop(void);
+static int switch_audio_source(struct re_printf *pf, void *arg);
+static int switch_audio_player(struct re_printf *pf, void *arg);
 
 
 static void redial_reset(void)
@@ -87,7 +90,8 @@ static void check_registrations(void)
 	n = list_count(uag_list());
 
 	/* We are ready */
-	ui_output("\x1b[32mAll %u useragent%s registered successfully!"
+	ui_output(baresip_uis(),
+		  "\x1b[32mAll %u useragent%s registered successfully!"
 		  " (%u ms)\x1b[;m\n",
 		  n, n==1 ? "" : "s",
 		  (uint32_t)(tmr_jiffies() - start_ticks));
@@ -417,9 +421,10 @@ static const struct cmd cmdv[] = {
 {"options",   'o',  CMD_PRM, "Options",                 options_command      },
 {"reginfo",   'r',        0, "Registration info",       ua_print_reg_status  },
 {NULL,        KEYCODE_ESC,0, "Hangup call",             cmd_hangup           },
-{NULL,        ' ',        0, "Toggle UAs",              cmd_ua_next          },
-{NULL,        'T',        0, "Toggle UAs",              cmd_ua_next          },
-{NULL,        'R',  CMD_PRM, "Create User-Agent",       create_ua            },
+{"uanext",    'T',        0, "Toggle UAs",              cmd_ua_next          },
+{"uanew",     0,    CMD_PRM, "Create User-Agent",       create_ua            },
+{"ausrc",     0,   CMD_IPRM, "Switch audio source",     switch_audio_source  },
+{"auplay",    0,   CMD_IPRM, "Switch audio player",     switch_audio_player  },
 
 };
 
@@ -526,7 +531,7 @@ static int hold_prev_call(struct re_printf *pf, void *arg)
 }
 
 
-static int switch_audio_dev(struct re_printf *pf, void *arg)
+static int switch_audio_player(struct re_printf *pf, void *arg)
 {
 	const struct cmd_arg *carg = arg;
 	struct pl pl_driver, pl_device;
@@ -560,17 +565,26 @@ static int switch_audio_dev(struct re_printf *pf, void *arg)
 		pl_strcpy(&pl_driver, driver, sizeof(driver));
 		pl_strcpy(&pl_device, device, sizeof(device));
 
-		if (!ausrc_find(driver)) {
-			re_hprintf(pf, "no such audio-source: %s\n", driver);
-			return 0;
-		}
-		if (!auplay_find(driver)) {
+		if (!auplay_find(baresip_auplayl(), driver)) {
 			re_hprintf(pf, "no such audio-player: %s\n", driver);
 			return 0;
 		}
 
-		re_hprintf(pf, "switch audio device: %s,%s\n",
+		re_hprintf(pf, "switch audio player: %s,%s\n",
 			   driver, device);
+
+		cfg = conf_config();
+		if (!cfg) {
+			return re_hprintf(pf, "no config object\n");
+		}
+
+		aucfg = &cfg->audio;
+
+		str_ncpy(aucfg->play_mod, driver, sizeof(aucfg->play_mod));
+		str_ncpy(aucfg->play_dev, device, sizeof(aucfg->play_dev));
+
+		str_ncpy(aucfg->alert_mod, driver, sizeof(aucfg->alert_mod));
+		str_ncpy(aucfg->alert_dev, device, sizeof(aucfg->alert_dev));
 
 		for (le = list_tail(ua_calls(uag_cur())); le; le = le->prev) {
 
@@ -584,14 +598,54 @@ static int switch_audio_dev(struct re_printf *pf, void *arg)
 					   " (%m)\n", err);
 				break;
 			}
-
-			err = audio_set_source(a, driver, device);
-			if (err) {
-				re_hprintf(pf, "failed to set audio-source"
-					   " (%m)\n", err);
-				break;
-			}
 		}
+	}
+
+	return 0;
+}
+
+
+static int switch_audio_source(struct re_printf *pf, void *arg)
+{
+	const struct cmd_arg *carg = arg;
+	struct pl pl_driver, pl_device;
+	struct config_audio *aucfg;
+	struct config *cfg;
+	struct audio *a;
+	struct le *le;
+	char driver[16], device[128] = "";
+	int err = 0;
+
+	static bool switch_aud_inprogress;
+
+	if (!switch_aud_inprogress && !carg->complete) {
+		re_hprintf(pf,
+			   "\rPlease enter audio device (driver,device)\n");
+	}
+
+	switch_aud_inprogress = true;
+
+	if (carg->complete) {
+
+		switch_aud_inprogress = false;
+
+		if (re_regex(carg->prm, str_len(carg->prm), "[^,]+,[~]*",
+			     &pl_driver, &pl_device)) {
+
+			return re_hprintf(pf, "\rFormat should be:"
+					  " driver,device\n");
+		}
+
+		pl_strcpy(&pl_driver, driver, sizeof(driver));
+		pl_strcpy(&pl_device, device, sizeof(device));
+
+		if (!ausrc_find(baresip_ausrcl(), driver)) {
+			re_hprintf(pf, "no such audio-source: %s\n", driver);
+			return 0;
+		}
+
+		re_hprintf(pf, "switch audio device: %s,%s\n",
+			   driver, device);
 
 		cfg = conf_config();
 		if (!cfg) {
@@ -600,14 +654,22 @@ static int switch_audio_dev(struct re_printf *pf, void *arg)
 
 		aucfg = &cfg->audio;
 
-		str_ncpy(aucfg->play_mod, driver, sizeof(aucfg->play_mod));
-		str_ncpy(aucfg->play_dev, device, sizeof(aucfg->play_dev));
-
 		str_ncpy(aucfg->src_mod, driver, sizeof(aucfg->src_mod));
 		str_ncpy(aucfg->src_dev, device, sizeof(aucfg->src_dev));
 
-		str_ncpy(aucfg->alert_mod, driver, sizeof(aucfg->alert_mod));
-		str_ncpy(aucfg->alert_dev, device, sizeof(aucfg->alert_dev));
+		for (le = list_tail(ua_calls(uag_cur())); le; le = le->prev) {
+
+			struct call *call = le->data;
+
+			a = call_audio(call);
+
+			err = audio_set_source(a, driver, device);
+			if (err) {
+				re_hprintf(pf, "failed to set audio-source"
+					   " (%m)\n", err);
+				break;
+			}
+		}
 	}
 
 	return 0;
@@ -684,7 +746,7 @@ static int set_current_call(struct re_printf *pf, void *arg)
 
 
 static const struct cmd callcmdv[] = {
-{"",          'I',        0, "Send re-INVITE",      call_reinvite         },
+{"reinvite",  'I',        0, "Send re-INVITE",      call_reinvite         },
 {"resume",    'X',        0, "Call resume",         cmd_call_resume       },
 {"audio_debug",'A',       0, "Audio stream",        call_audio_debug      },
 {"audio_cycle",'e',       0, "Cycle audio encoder", call_audioenc_cycle   },
@@ -693,7 +755,6 @@ static const struct cmd callcmdv[] = {
 {"hold",      'x',        0, "Call hold",           cmd_call_hold         },
 {"",          'H',        0, "Hold previous call",  hold_prev_call        },
 {"",          'L',        0, "Resume previous call",hold_prev_call        },
-{"audev",     0,   CMD_IPRM, "Switch audio device", switch_audio_dev      },
 
 #ifdef USE_VIDEO
 {"video_cycle", 'E',      0, "Cycle video encoder", call_videoenc_cycle   },
@@ -715,8 +776,8 @@ static const struct cmd callcmdv[] = {
 {NULL, '9',         0, NULL,                  digit_handler         },
 {NULL, KEYCODE_REL, 0, NULL,                  digit_handler         },
 
-{NULL, 'S',        0, "Statusmode toggle",       toggle_statmode    },
-{NULL, '@',  CMD_PRM, "Set current call <line>", set_current_call   },
+{NULL,  'S',        0, "Statusmode toggle",       toggle_statmode   },
+{"line",'@',  CMD_PRM, "Set current call <line>", set_current_call  },
 };
 
 
@@ -762,7 +823,7 @@ static void tmrstat_handler(void *arg)
 
 	tmr_start(&tmr_stat, 100, tmrstat_handler, 0);
 
-	if (ui_isediting())
+	if (ui_isediting(baresip_uis()))
 		return;
 
 	if (STATMODE_OFF != statmode) {
@@ -788,7 +849,7 @@ static void alert_start(void *arg)
 	if (!menu.bell)
 		return;
 
-	ui_output("\033[10;1000]\033[11;1000]\a");
+	ui_output(baresip_uis(), "\033[10;1000]\033[11;1000]\a");
 
 	tmr_start(&tmr_alert, 1000, alert_start, NULL);
 }
@@ -800,7 +861,7 @@ static void alert_stop(void)
 		return;
 
 	if (tmr_isrunning(&tmr_alert))
-		ui_output("\r");
+		ui_output(baresip_uis(), "\r");
 
 	tmr_cancel(&tmr_alert);
 }
@@ -1018,9 +1079,14 @@ static int module_init(void)
 	if (err)
 		return err;
 
-	err |= uag_event_register(ua_event_handler, NULL);
+	err = uag_event_register(ua_event_handler, NULL);
+	if (err)
+		return err;
 
-	err |= message_init(message_handler, NULL);
+	err = message_listen(&menu.message, baresip_message(),
+			     message_handler, NULL);
+	if (err)
+		return err;
 
 	return err;
 }
@@ -1031,7 +1097,7 @@ static int module_close(void)
 	debug("menu: close (redial current_attempts=%d)\n",
 	      menu.current_attempts);
 
-	message_close();
+	menu.message = mem_deref(menu.message);
 	uag_event_unregister(ua_event_handler);
 	cmd_unregister(baresip_commands(), cmdv);
 	cmd_unregister(baresip_commands(), dialcmdv);
