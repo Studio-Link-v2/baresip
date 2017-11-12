@@ -2,6 +2,9 @@ baresip README
 ==============
 
 
+![Baresip Logo](https://raw.githubusercontent.com/alfredh/baresip/master/share/logo.png)
+
+
 Baresip is a portable and modular SIP User-Agent with audio and video support.
 Copyright (c) 2010 - 2017 Creytiv.com
 Distributed under BSD license
@@ -103,7 +106,7 @@ Distributed under BSD license
   - FFmpeg/libav libavformat/avdevice input
   - Cairo video-source test module
   - Direct Show video-source
-  - MacOSX QTcapture/quicktime video-source
+  - MacOSX QTcapture/AVCapture video-source
   - RST media player
   - Linux V4L/V4L2 video-source
   - X11 grabber video-source
@@ -215,6 +218,7 @@ aubridge      Audio bridge module
 audiounit     AudioUnit audio driver for MacOSX/iOS
 aufile        Audio module for using a WAV-file as audio input
 auloop        Audio-loop test module
+avahi         Avahi Zeroconf Module
 avcapture     Video source using iOS AVFoundation video capture
 avcodec       Video codec using FFmpeg/libav libavcodec
 avformat      Video source using FFmpeg/libav libavformat
@@ -242,6 +246,7 @@ gst1          Gstreamer 1.0 audio source
 gst_video     Gstreamer video codec
 gst_video1    Gstreamer 1.0 video codec
 gtk           GTK+ 2.0 UI
+gzrtp         ZRTP module using GNU ZRTP C++ library
 h265          H.265 video codec
 httpd         HTTP webserver UI-module
 ice           ICE protocol for NAT Traversal
@@ -267,7 +272,6 @@ portaudio     Portaudio driver
 pulse         Pulseaudio driver
 presence      Presence module
 qtcapture     Apple QTCapture video source driver
-quicktime     Apple Quicktime video source driver (deprecated)
 rst           Radio streamer using mpg123
 sdl           Simple DirectMedia Layer (SDL) video output driver
 sdl2          Simple DirectMedia Layer v2 (SDL2) video output driver

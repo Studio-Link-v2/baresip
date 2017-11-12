@@ -376,6 +376,8 @@ static int create_ua(struct re_printf *pf, void *arg)
 
 static int cmd_ua_next(struct re_printf *pf, void *unused)
 {
+	int err;
+
 	(void)pf;
 	(void)unused;
 
@@ -386,13 +388,13 @@ static int cmd_ua_next(struct re_printf *pf, void *unused)
 
 	le_cur = le_cur->next ? le_cur->next : list_head(uag_list());
 
-	(void)re_fprintf(stderr, "ua: %s\n", ua_aor(list_ledata(le_cur)));
+	err = re_hprintf(pf, "ua: %s\n", ua_aor(list_ledata(le_cur)));
 
 	uag_current_set(list_ledata(le_cur));
 
 	update_callstatus();
 
-	return 0;
+	return err;
 }
 
 
@@ -407,6 +409,32 @@ static int cmd_print_calls(struct re_printf *pf, void *unused)
 {
 	(void)unused;
 	return ua_print_calls(pf, uag_cur());
+}
+
+
+static const char about_fmt[] =
+	".------------------------------------------------------------.\n"
+	"|                      "
+	"\x1b[34;1m" "bare"
+	"\x1b[31;1m" "sip"
+	"\x1b[;m"
+	" %-10s                    |\n"
+	"|                                                            |\n"
+	"| Baresip is a portable and modular SIP User-Agent           |\n"
+	"| with audio and video support                               |\n"
+	"|                                                            |\n"
+	"| License:   BSD                                             |\n"
+	"| Homepage:  https://github.com/alfredh/baresip              |\n"
+	"|                                                            |\n"
+	"'------------------------------------------------------------'\n"
+	;
+
+
+static int about_box(struct re_printf *pf, void *unused)
+{
+	(void)unused;
+
+	return re_hprintf(pf, about_fmt, BARESIP_VERSION);
 }
 
 
@@ -425,6 +453,7 @@ static const struct cmd cmdv[] = {
 {"uanew",     0,    CMD_PRM, "Create User-Agent",       create_ua            },
 {"ausrc",     0,   CMD_IPRM, "Switch audio source",     switch_audio_source  },
 {"auplay",    0,   CMD_IPRM, "Switch audio player",     switch_audio_player  },
+{"about",     0,          0, "About box",               about_box            },
 
 };
 
@@ -1031,8 +1060,8 @@ static void message_handler(const struct pl *peer, const struct pl *ctype,
 	(void)ctype;
 	(void)arg;
 
-	(void)re_fprintf(stderr, "\r%r: \"%b\"\n", peer,
-			 mbuf_buf(body), mbuf_get_left(body));
+	ui_output(baresip_uis(), "\r%r: \"%b\"\n",
+		  peer, mbuf_buf(body), mbuf_get_left(body));
 
 	(void)play_file(NULL, baresip_player(), "message.wav", 0);
 }

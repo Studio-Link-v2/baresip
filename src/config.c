@@ -19,6 +19,11 @@
 #define SA_INIT { { {0} }, 0}
 
 
+#ifndef PREFIX
+#define PREFIX "/usr"
+#endif
+
+
 /** Core Run-time Configuration - populated from config file */
 static struct config core_config = {
 
@@ -38,7 +43,7 @@ static struct config core_config = {
 
 	/** Audio */
 	{
-		"",
+		PREFIX "/share/baresip",
 		"","",
 		"","",
 		"","",
@@ -51,6 +56,8 @@ static struct config core_config = {
 		false,
 		AUDIO_MODE_POLL,
 		false,
+		AUFMT_S16LE,
+		AUFMT_S16LE,
 	},
 
 #ifdef USE_VIDEO
@@ -90,6 +97,11 @@ static struct config core_config = {
 		""
 	},
 #endif
+
+	/* SDP */
+	{
+		false
+	},
 };
 
 
@@ -129,11 +141,22 @@ static int dns_server_handler(const struct pl *pl, void *arg)
 }
 
 
+static enum aufmt resolve_aufmt(const struct pl *fmt)
+{
+	if (0 == pl_strcasecmp(fmt, "s16"))     return AUFMT_S16LE;
+	if (0 == pl_strcasecmp(fmt, "float"))   return AUFMT_FLOAT;
+	if (0 == pl_strcasecmp(fmt, "s24_3le")) return AUFMT_S24_3LE;
+
+	return (enum aufmt)-1;
+}
+
+
 int config_parse_conf(struct config *cfg, const struct conf *conf)
 {
 	struct pl pollm, as, ap;
 	enum poll_method method;
 	struct vidsz size = {0, 0};
+	struct pl fmt;
 	uint32_t v;
 	int err = 0;
 
@@ -199,6 +222,32 @@ int config_parse_conf(struct config *cfg, const struct conf *conf)
 
 	(void)conf_get_bool(conf, "audio_level", &cfg->audio.level);
 
+	if (0 == conf_get(conf, "ausrc_format", &fmt)) {
+
+		cfg->audio.src_fmt = resolve_aufmt(&fmt);
+		if (cfg->audio.src_fmt == -1) {
+			warning("ausrc_format: sample format not supported"
+				" (%r)\n", &fmt);
+			return EINVAL;
+		}
+
+		info("ausrc: using audio sample format `%s'\n",
+		     aufmt_name(cfg->audio.src_fmt));
+	}
+
+	if (0 == conf_get(conf, "auplay_format", &fmt)) {
+
+		cfg->audio.play_fmt = resolve_aufmt(&fmt);
+		if (cfg->audio.play_fmt == -1) {
+			warning("auplay_format: audio format not supported"
+				" (%r)\n", &fmt);
+			return EINVAL;
+		}
+
+		info("auplay: using audio sample format `%s'\n",
+		     aufmt_name(cfg->audio.play_fmt));
+	}
+
 #ifdef USE_VIDEO
 	/* Video */
 	(void)conf_get_csv(conf, "video_source",
@@ -248,6 +297,9 @@ int config_parse_conf(struct config *cfg, const struct conf *conf)
 	(void)conf_get_str(conf, "bfcp_proto", cfg->bfcp.proto,
 			   sizeof(cfg->bfcp.proto));
 #endif
+
+	/* SDP */
+	(void)conf_get_bool(conf, "sdp_ebuacip", &cfg->sdp.ebuacip);
 
 	return err;
 }
@@ -748,7 +800,7 @@ int config_write_template(const char *file, const struct config *cfg)
 	(void)re_fprintf(f, "module_app\t\t"  MOD_PRE "contact"MOD_EXT"\n");
 	(void)re_fprintf(f, "module_app\t\t"  MOD_PRE "debug_cmd"MOD_EXT"\n");
 #ifdef LINUX
-	(void)re_fprintf(f, "module_app\t\t"  MOD_PRE "dtmfio"MOD_EXT"\n");
+	(void)re_fprintf(f, "#module_app\t\t"  MOD_PRE "dtmfio"MOD_EXT"\n");
 #endif
 	(void)re_fprintf(f, "#module_app\t\t"  MOD_PRE "echo"MOD_EXT"\n");
 	(void)re_fprintf(f, "#module_app\t\t\t" MOD_PRE "gtk" MOD_EXT "\n");
@@ -800,6 +852,11 @@ int config_write_template(const char *file, const struct config *cfg)
 			"ice_debug\t\tno\n"
 			"ice_nomination\t\tregular\t# {regular,aggressive}\n"
 			"ice_mode\t\tfull\t# {full,lite}\n");
+
+	(void)re_fprintf(f,
+			"\n# ZRTP\n"
+			"#zrtp_hash\t\tno  # Disable SDP zrtp-hash "
+			"(not recommended)\n");
 
 	(void)re_fprintf(f,
 			"\n# Menu\n"

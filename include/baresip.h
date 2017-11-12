@@ -13,7 +13,7 @@ extern "C" {
 
 
 /** Defines the Baresip version string */
-#define BARESIP_VERSION "0.5.4"
+#define BARESIP_VERSION "0.5.6"
 
 
 #ifndef NET_MAX_NS
@@ -204,6 +204,8 @@ struct config_audio {
 	bool src_first;         /**< Audio source opened first      */
 	enum audio_mode txmode; /**< Audio transmit mode            */
 	bool level;             /**< Enable audio level indication  */
+	int src_fmt;            /**< Audio source sample format     */
+	int play_fmt;           /**< Audio playback sample format   */
 };
 
 #ifdef USE_VIDEO
@@ -248,6 +250,11 @@ struct config_bfcp {
 };
 #endif
 
+/** SDP */
+struct config_sdp {
+	bool ebuacip;           /**< Enable EBU-ACIP parameters     */
+};
+
 
 /** Core configuration */
 struct config {
@@ -268,6 +275,8 @@ struct config {
 #ifdef USE_VIDEO
 	struct config_bfcp bfcp;
 #endif
+
+	struct config_sdp sdp;
 };
 
 int config_parse_conf(struct config *cfg, const struct conf *conf);
@@ -358,9 +367,10 @@ struct ausrc_prm {
 	uint32_t   srate;       /**< Sampling rate in [Hz] */
 	uint8_t    ch;          /**< Number of channels    */
 	uint32_t   ptime;       /**< Wanted packet-time in [ms] */
+	int        fmt;         /**< Sample format (enum aufmt) */
 };
 
-typedef void (ausrc_read_h)(const int16_t *sampv, size_t sampc, void *arg);
+typedef void (ausrc_read_h)(const void *sampv, size_t sampc, void *arg);
 typedef void (ausrc_error_h)(int err, const char *str, void *arg);
 
 typedef int  (ausrc_alloc_h)(struct ausrc_st **stp, const struct ausrc *ausrc,
@@ -390,9 +400,10 @@ struct auplay_prm {
 	uint32_t   srate;       /**< Sampling rate in [Hz] */
 	uint8_t    ch;          /**< Number of channels    */
 	uint32_t   ptime;       /**< Wanted packet-time in [ms] */
+	int        fmt;         /**< Sample format (enum aufmt) */
 };
 
-typedef void (auplay_write_h)(int16_t *sampv, size_t sampc, void *arg);
+typedef void (auplay_write_h)(void *sampv, size_t sampc, void *arg);
 
 typedef int  (auplay_alloc_h)(struct auplay_st **stp, const struct auplay *ap,
 			      struct auplay_prm *prm, const char *device,
@@ -482,7 +493,7 @@ void loglv(enum log_level level, const char *fmt, ...);
 void debug(const char *fmt, ...);
 void info(const char *fmt, ...);
 void warning(const char *fmt, ...);
-void error(const char *fmt, ...);
+void error_msg(const char *fmt, ...);
 
 
 /*
@@ -606,7 +617,6 @@ int  ua_progress(struct ua *ua, struct call *call);
 int  ua_hold_answer(struct ua *ua, struct call *call);
 int  ua_options_send(struct ua *ua, const char *uri,
 		     options_resp_h *resph, void *arg);
-int  ua_sipfd(const struct ua *ua);
 int  ua_debug(struct re_printf *pf, const struct ua *ua);
 int  ua_print_calls(struct re_printf *pf, const struct ua *ua);
 int  ua_print_status(struct re_printf *pf, const struct ua *ua);

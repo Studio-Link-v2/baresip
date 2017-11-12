@@ -36,7 +36,7 @@
 
 
 static bool opus_mirror;
-static char fmtp[256] = "stereo=1;sprop-stereo=1";
+static char fmtp[256] = "";
 static char fmtp_mirror[256];
 
 
@@ -63,13 +63,12 @@ static struct aucodec opus = {
 	.srate     = 48000,
 	.crate     = 48000,
 	.ch        = 2,
-	.fmtp      = NULL,
+	.fmtp      = fmtp,
 	.encupdh   = opus_encode_update,
 	.ench      = opus_encode_frm,
 	.decupdh   = opus_decode_update,
 	.dech      = opus_decode_frm,
 	.plch      = opus_decode_pkloss,
-	.fmtp_ench = opus_fmtp_enc,
 };
 
 
@@ -89,8 +88,19 @@ static int module_init(void)
 	struct conf *conf = conf_cur();
 	uint32_t value;
 	char *p = fmtp + str_len(fmtp);
-	bool b;
+	bool b, stereo = true, sprop_stereo = true;
 	int n = 0;
+
+	conf_get_bool(conf, "opus_stereo", &stereo);
+	conf_get_bool(conf, "opus_sprop_stereo", &sprop_stereo);
+
+	/* always set stereo parameter first */
+	n = re_snprintf(p, sizeof(fmtp) - str_len(p),
+			"stereo=%d;sprop-stereo=%d", stereo, sprop_stereo);
+	if (n <= 0)
+		return ENOMEM;
+
+	p += n;
 
 	if (0 == conf_get_u32(conf, "opus_bitrate", &value)) {
 
@@ -133,6 +143,11 @@ static int module_init(void)
 	}
 
 	(void)conf_get_bool(conf, "opus_mirror", &opus_mirror);
+
+	if (opus_mirror) {
+		opus.fmtp = NULL;
+		opus.fmtp_ench = opus_fmtp_enc;
+	}
 
 	debug("opus: fmtp=\"%s\"\n", fmtp);
 

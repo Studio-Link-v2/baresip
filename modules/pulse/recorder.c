@@ -18,8 +18,10 @@ struct ausrc_st {
 	pa_simple *s;
 	pthread_t thread;
 	bool run;
-	int16_t *sampv;
+	void *sampv;
 	size_t sampc;
+	size_t sampsz;
+	uint32_t ptime;
 	ausrc_read_h *rh;
 	void *arg;
 };
@@ -46,8 +48,18 @@ static void ausrc_destructor(void *arg)
 static void *read_thread(void *arg)
 {
 	struct ausrc_st *st = arg;
-	const size_t num_bytes = st->sampc * 2;
+	const size_t num_bytes = st->sampc * st->sampsz;
 	int ret, pa_error = 0;
+	uint64_t now, last_read, diff;
+	unsigned dropped = 0;
+	bool init = true;
+
+	if (pa_simple_flush(st->s, &pa_error)) {
+		warning("pulse: pa_simple_flush error (%s)\n",
+		        pa_strerror(pa_error));
+	}
+
+	last_read = tmr_jiffies();
 
 	while (st->run) {
 
@@ -58,10 +70,42 @@ static void *read_thread(void *arg)
 			continue;
 		}
 
+		/* Some devices might send a burst of samples right after the
+		   initialization - filter them out */
+		if (init) {
+			now = tmr_jiffies();
+			diff = (now > last_read)? now - last_read : 0;
+
+			if (diff < st->ptime / 2) {
+				last_read = now;
+				++dropped;
+				continue;
+			}
+			else {
+				init = false;
+
+				if (dropped)
+					debug("pulse: dropped %u frames of "
+					      "garbage at the beginning of "
+					      "the recording\n", dropped);
+			}
+		}
+
 		st->rh(st->sampv, st->sampc, st->arg);
 	}
 
 	return NULL;
+}
+
+
+static int aufmt_to_pulse_format(enum aufmt fmt)
+{
+	switch (fmt) {
+
+	case AUFMT_S16LE:  return PA_SAMPLE_S16NE;
+	case AUFMT_FLOAT:  return PA_SAMPLE_FLOAT32NE;
+	default: return 0;
+	}
 }
 
 
@@ -95,14 +139,16 @@ int pulse_recorder_alloc(struct ausrc_st **stp, const struct ausrc *as,
 	st->arg = arg;
 
 	st->sampc = prm->srate * prm->ch * prm->ptime / 1000;
+	st->sampsz = aufmt_sample_size(prm->fmt);
+	st->ptime = prm->ptime;
 
-	st->sampv = mem_alloc(2 * st->sampc, NULL);
+	st->sampv = mem_alloc(st->sampsz * st->sampc, NULL);
 	if (!st->sampv) {
 		err = ENOMEM;
 		goto out;
 	}
 
-	ss.format   = PA_SAMPLE_S16NE;
+	ss.format   = aufmt_to_pulse_format(prm->fmt);
 	ss.channels = prm->ch;
 	ss.rate     = prm->srate;
 

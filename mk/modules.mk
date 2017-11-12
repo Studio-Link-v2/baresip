@@ -81,6 +81,7 @@ USE_AVFORMAT := $(shell [ -f $(SYSROOT)/include/libavformat/avformat.h ] || \
 	[ -f $(SYSROOT)/local/include/libavformat/avformat.h ] || \
 	[ -f $(SYSROOT)/include/$(MACHINE)/libavformat/avformat.h ] || \
 	[ -f $(SYSROOT_ALT)/include/libavformat/avformat.h ] && echo "yes")
+USE_AVAHI := $(shell pkg-config --exists avahi-client && echo "yes")
 USE_BV32  := $(shell [ -f $(SYSROOT)/include/bv32/bv32.h ] || \
 	[ -f $(SYSROOT)/local/include/bv32/bv32.h ] && echo "yes")
 USE_CAIRO  := $(shell [ -f $(SYSROOT)/include/cairo/cairo.h ] || \
@@ -300,6 +301,9 @@ MODULES   += avcodec
 ifneq ($(USE_AVFORMAT),)
 MODULES   += avformat
 endif
+ifneq ($(USE_AVAHI),)
+MODULES   += avahi
+endif
 endif
 ifneq ($(USE_BV32),)
 MODULES   += bv32
@@ -447,6 +451,9 @@ MODULES   += x11 x11grab
 endif
 ifneq ($(USE_ZRTP),)
 MODULES   += zrtp
+endif
+ifneq ($(USE_GZRTP),)
+MODULES   += gzrtp
 endif
 ifneq ($(USE_DSHOW),)
 MODULES   += dshow

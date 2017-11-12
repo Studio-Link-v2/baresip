@@ -65,6 +65,7 @@ struct mnat_media {
 	struct sdp_media *sdpm;
 	struct icem *icem;
 	bool complete;
+	bool terminated;
 	int nstun;                   /**< Number of pending STUN candidates  */
 };
 
@@ -122,10 +123,14 @@ static void stun_resp_handler(int err, uint16_t scode, const char *reason,
 	struct stun_attr *attr;
 	struct ice_cand *lcand;
 
+	if (m->terminated)
+		return;
+
 	--m->nstun;
 
 	if (err || scode > 0) {
-		warning("STUN Request failed: %m\n", err);
+		warning("ice: comp %u: STUN Request failed: %m\n",
+			comp->id, err);
 		goto out;
 	}
 
@@ -363,6 +368,8 @@ static void media_destructor(void *arg)
 {
 	struct mnat_media *m = arg;
 	unsigned i;
+
+	m->terminated = true;
 
 	list_unlink(&m->le);
 	mem_deref(m->sdpm);
@@ -647,6 +654,7 @@ static void gather_handler(int err, uint16_t scode, const char *reason,
 			   void *arg)
 {
 	struct mnat_media *m = arg;
+	mnat_estab_h *estabh = m->sess->estabh;
 
 	if (err || scode) {
 		warning("ice: gather error: %m (%u %s)\n",
@@ -667,7 +675,11 @@ static void gather_handler(int err, uint16_t scode, const char *reason,
 			return;
 	}
 
-	m->sess->estabh(err, scode, reason, m->sess->arg);
+	if (err || scode)
+		m->sess->estabh = NULL;
+
+	if (estabh)
+		estabh(err, scode, reason, m->sess->arg);
 }
 
 
@@ -780,6 +792,7 @@ static int media_alloc(struct mnat_media **mp, struct mnat_sess *sess,
 		       struct sdp_media *sdpm)
 {
 	struct mnat_media *m;
+	enum ice_role role;
 	unsigned i;
 	int err = 0;
 
@@ -796,7 +809,12 @@ static int media_alloc(struct mnat_media **mp, struct mnat_sess *sess,
 	m->compv[0].sock = mem_ref(sock1);
 	m->compv[1].sock = mem_ref(sock2);
 
-	err = icem_alloc(&m->icem, ice.mode, sess->offerer,
+	if (sess->offerer)
+		role = ICE_ROLE_CONTROLLING;
+	else
+		role = ICE_ROLE_CONTROLLED;
+
+	err = icem_alloc(&m->icem, ice.mode, role,
 			 proto, ICE_LAYER,
 			 sess->tiebrk, sess->lufrag, sess->lpwd,
 			 conncheck_handler, m);
@@ -805,6 +823,9 @@ static int media_alloc(struct mnat_media **mp, struct mnat_sess *sess,
 
 	icem_conf(m->icem)->nom   = ice.nom;
 	icem_conf(m->icem)->debug = ice.debug;
+	icem_conf(m->icem)->rc    = 4;
+
+	icem_set_conf(m->icem, icem_conf(m->icem));
 
 	icem_set_name(m->icem, sdp_media_name(sdpm));
 
@@ -931,6 +952,7 @@ static int module_init(void)
 			ice.nom = ICE_NOMINATION_AGGRESSIVE;
 		else {
 			warning("ice: unknown nomination: %r\n", &pl);
+			return EINVAL;
 		}
 	}
 	if (!conf_get(conf_cur(), "ice_mode", &pl)) {
@@ -940,6 +962,7 @@ static int module_init(void)
 			ice.mode = ICE_MODE_LITE;
 		else {
 			warning("ice: unknown mode: %r\n", &pl);
+			return EINVAL;
 		}
 	}
 #endif
