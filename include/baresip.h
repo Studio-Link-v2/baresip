@@ -13,7 +13,7 @@ extern "C" {
 
 
 /** Defines the Baresip version string */
-#define BARESIP_VERSION "0.5.6"
+#define BARESIP_VERSION "0.5.7"
 
 
 #ifndef NET_MAX_NS
@@ -26,6 +26,7 @@ struct sa;
 struct sdp_media;
 struct sdp_session;
 struct sip_msg;
+struct stream;
 struct ua;
 struct vidframe;
 struct vidrect;
@@ -167,8 +168,6 @@ static inline bool in_range(const struct range *rng, uint32_t val)
 enum audio_mode {
 	AUDIO_MODE_POLL = 0,         /**< Polling mode                  */
 	AUDIO_MODE_THREAD,           /**< Use dedicated thread          */
-	AUDIO_MODE_THREAD_REALTIME,  /**< Use dedicated realtime-thread */
-	AUDIO_MODE_TMR               /**< Use timer                     */
 };
 
 
@@ -206,6 +205,8 @@ struct config_audio {
 	bool level;             /**< Enable audio level indication  */
 	int src_fmt;            /**< Audio source sample format     */
 	int play_fmt;           /**< Audio playback sample format   */
+	int enc_fmt;            /**< Audio encoder sample format    */
+	int dec_fmt;            /**< Audio decoder sample format    */
 };
 
 #ifdef USE_VIDEO
@@ -588,6 +589,7 @@ enum ua_event {
 	UA_EVENT_CALL_TRANSFER_FAILED,
 	UA_EVENT_CALL_DTMF_START,
 	UA_EVENT_CALL_DTMF_END,
+	UA_EVENT_CALL_RTCP,
 
 	UA_EVENT_MAX,
 };
@@ -826,6 +828,7 @@ const struct vidisp *vidisp_find(const struct list *vidispl, const char *name);
 /** Audio Codec parameters */
 struct auenc_param {
 	uint32_t ptime;  /**< Packet time in [ms]   */
+	uint32_t bitrate;/**< Wanted bitrate in [bit/s] */
 };
 
 struct auenc_state;
@@ -837,11 +840,17 @@ typedef int (auenc_update_h)(struct auenc_state **aesp,
 			     struct auenc_param *prm, const char *fmtp);
 typedef int (auenc_encode_h)(struct auenc_state *aes, uint8_t *buf,
 			     size_t *len, const int16_t *sampv, size_t sampc);
+typedef int (auenc_encode_fmt_h)(struct auenc_state *aes,
+				 uint8_t *buf, size_t *len,
+				 int fmt, const void *sampv, size_t sampc);
 
 typedef int (audec_update_h)(struct audec_state **adsp,
 			     const struct aucodec *ac, const char *fmtp);
 typedef int (audec_decode_h)(struct audec_state *ads, int16_t *sampv,
 			     size_t *sampc, const uint8_t *buf, size_t len);
+typedef int (audec_decode_fmt_h)(struct audec_state *ads,
+				 int fmt, void *sampv, size_t *sampc,
+				 const uint8_t *buf, size_t len);
 typedef int (audec_plc_h)(struct audec_state *ads,
 			  int16_t *sampv, size_t *sampc);
 
@@ -860,6 +869,8 @@ struct aucodec {
 	audec_plc_h    *plch;
 	sdp_fmtp_enc_h *fmtp_ench;
 	sdp_fmtp_cmp_h *fmtp_cmph;
+	auenc_encode_fmt_h *encfmth;
+	audec_decode_fmt_h *decfmth;
 };
 
 void aucodec_register(struct list *aucodecl, struct aucodec *ac);
@@ -985,6 +996,8 @@ int  audio_set_player(struct audio *au, const char *mod, const char *device);
 void audio_encoder_cycle(struct audio *audio);
 int  audio_level_get(const struct audio *au, double *level);
 int  audio_debug(struct re_printf *pf, const struct audio *a);
+struct stream *audio_strm(const struct audio *a);
+int audio_set_bitrate(struct audio *au, uint32_t bitrate);
 
 
 /*
@@ -1004,6 +1017,14 @@ void  video_encoder_cycle(struct video *video);
 int   video_debug(struct re_printf *pf, const struct video *v);
 uint32_t video_calc_rtp_timestamp(int64_t pts, unsigned fps);
 double video_calc_seconds(uint32_t rtp_ts);
+struct stream *video_strm(const struct video *v);
+
+
+/*
+ * Generic stream
+ */
+
+const struct rtcp_stats *stream_rtcp_stats(const struct stream *strm);
 
 
 /*
@@ -1160,6 +1181,14 @@ void module_unload(const char *name);
 
 double mos_calculate(double *r_factor, double rtt,
 		     double jitter, uint32_t num_packets_lost);
+
+
+/*
+ * Generic event
+ */
+
+int event_encode_dict(struct odict *od, struct ua *ua, enum ua_event ev,
+		      struct call *call, const char *prm);
 
 
 /*

@@ -187,6 +187,9 @@ USE_SPEEX_PP := $(shell [ -f $(SYSROOT)/include/speex_preprocess.h ] || \
 USE_SYSLOG := $(shell [ -f $(SYSROOT)/include/syslog.h ] || \
 	[ -f $(SYSROOT_ALT)/include/syslog.h ] || \
 	[ -f $(SYSROOT)/local/include/syslog.h ] && echo "yes")
+HAVE_LIBMQTT := $(shell [ -f $(SYSROOT)/include/mosquitto.h ] || \
+	[ -f $(SYSROOT)/local/include/mosquitto.h ] \
+	&& echo "yes")
 USE_V4L  := $(shell [ -f $(SYSROOT)/include/libv4l1.h ] || \
 	[ -f $(SYSROOT)/local/include/libv4l1.h ] \
 	&& echo "yes")
@@ -273,6 +276,10 @@ MODULES   += srtp
 MODULES   += uuid
 MODULES   += debug_cmd
 
+ifneq ($(HAVE_LIBMQTT),)
+MODULES   += mqtt
+endif
+
 ifneq ($(HAVE_PTHREAD),)
 MODULES   += aubridge aufile
 endif
@@ -301,9 +308,9 @@ MODULES   += avcodec
 ifneq ($(USE_AVFORMAT),)
 MODULES   += avformat
 endif
+endif
 ifneq ($(USE_AVAHI),)
 MODULES   += avahi
-endif
 endif
 ifneq ($(USE_BV32),)
 MODULES   += bv32

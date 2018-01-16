@@ -17,6 +17,7 @@ SRCS	+= cmd.c
 SRCS	+= conf.c
 SRCS	+= config.c
 SRCS	+= contact.c
+SRCS	+= event.c
 SRCS	+= log.c
 SRCS	+= menc.c
 SRCS	+= message.c
@@ -33,6 +34,7 @@ SRCS	+= rtpkeep.c
 SRCS	+= sdp.c
 SRCS	+= sipreq.c
 SRCS	+= stream.c
+SRCS	+= timer.c
 SRCS	+= ua.c
 SRCS	+= ui.c
 
@@ -45,6 +47,7 @@ SRCS	+= vidcodec.c
 SRCS	+= vidfilt.c
 SRCS	+= vidisp.c
 SRCS	+= vidsrc.c
+SRCS	+= vidutil.c
 endif
 
 ifneq ($(STATIC),)

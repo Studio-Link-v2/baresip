@@ -3,9 +3,9 @@
  *
  * Copyright (C) 2010 - 2015 Creytiv.com
  */
+#define _DEFAULT_SOURCE 1
 #include <stdlib.h>
 #include <string.h>
-#define __USE_POSIX199309
 #include <time.h>
 #include <pthread.h>
 #include <gst/gst.h>

@@ -35,7 +35,8 @@ enum {
 
 /** Media constants */
 enum {
-	AUDIO_BANDWIDTH = 128000 /**< Bandwidth for audio in bits/s       */
+	AUDIO_BANDWIDTH = 128000,  /**< Bandwidth for audio in bits/s      */
+	VIDEO_SRATE     =  90000,  /**< Sampling rate for video            */
 };
 
 
@@ -133,7 +134,6 @@ int  audio_encoder_set(struct audio *a, const struct aucodec *ac,
 		       int pt_tx, const char *params);
 int  audio_decoder_set(struct audio *a, const struct aucodec *ac,
 		       int pt_rx, const char *params);
-struct stream *audio_strm(const struct audio *a);
 int  audio_send_digit(struct audio *a, char key);
 void audio_sdp_attr_decode(struct audio *a);
 int  audio_print_rtpstat(struct re_printf *pf, const struct audio *au);
@@ -471,7 +471,6 @@ int  video_encoder_set(struct video *v, struct vidcodec *vc,
 		       int pt_tx, const char *params);
 int  video_decoder_set(struct video *v, struct vidcodec *vc, int pt_rx,
 		       const char *fmtp);
-struct stream *video_strm(const struct video *v);
 void video_update_picture(struct video *v);
 void video_sdp_attr_decode(struct video *v);
 int  video_print(struct re_printf *pf, const struct video *v);
@@ -541,3 +540,10 @@ static inline int timestamp_wrap(uint32_t ts_new, uint32_t ts_old)
 
 	return 0;
 }
+
+
+/*
+ * Timer
+ */
+
+uint64_t tmr_jiffies_usec(void);

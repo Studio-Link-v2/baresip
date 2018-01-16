@@ -5,10 +5,12 @@
  * Copyright (C) 2016 - 2017 Jonathan Sieber
  */
 
+#define _POSIX_C_SOURCE 199309L
+
 #include "omx.h"
 
-#include <re/re.h>
-#include <rem/rem.h>
+#include <re.h>
+#include <rem.h>
 #include <baresip.h>
 
 #include <stdio.h>
@@ -18,6 +20,11 @@
 /* Avoids a VideoCore header warning about clock_gettime() */
 #include <time.h>
 #include <sys/time.h>
+
+#ifdef RASPBERRY_PI
+#include <bcm_host.h>
+#endif
+
 
 /**
  * @defgroup omx omx
@@ -153,8 +160,11 @@ static void block_until_state_changed(OMX_HANDLETYPE hComponent,
 }
 
 
-void omx_deinit(struct omx_state* st)
+void omx_deinit(struct omx_state *st)
 {
+	if (!st)
+		return;
+
 	info("omx_deinit");
 	OMX_SendCommand(st->video_render,
 		OMX_CommandStateSet, OMX_StateIdle, NULL);
@@ -167,13 +177,15 @@ void omx_deinit(struct omx_state* st)
 }
 
 
-void omx_display_disable(struct omx_state* st)
+void omx_display_disable(struct omx_state *st)
 {
-	(void)st;
-
-	#ifdef RASPBERRY_PI
+#ifdef RASPBERRY_PI
 	OMX_ERRORTYPE err;
 	OMX_CONFIG_DISPLAYREGIONTYPE config;
+
+	if (!st)
+		return;
+
 	memset(&config, 0, sizeof(OMX_CONFIG_DISPLAYREGIONTYPE));
 	config.nSize = sizeof(OMX_CONFIG_DISPLAYREGIONTYPE);
 	config.nVersion.nVersion = OMX_VERSION;
@@ -187,8 +199,9 @@ void omx_display_disable(struct omx_state* st)
 	if (err != 0) {
 		warning("omx_display_disable command failed");
 	}
-
-	#endif
+#else
+	(void)st;
+#endif
 }
 
 

@@ -58,6 +58,8 @@ static struct config core_config = {
 		false,
 		AUFMT_S16LE,
 		AUFMT_S16LE,
+		AUFMT_S16LE,
+		AUFMT_S16LE,
 	},
 
 #ifdef USE_VIDEO
@@ -147,16 +149,51 @@ static enum aufmt resolve_aufmt(const struct pl *fmt)
 	if (0 == pl_strcasecmp(fmt, "float"))   return AUFMT_FLOAT;
 	if (0 == pl_strcasecmp(fmt, "s24_3le")) return AUFMT_S24_3LE;
 
+	/* XXX remove this after librem is fixed */
+	if (0 == pl_strcasecmp(fmt, "s16le"))   return AUFMT_S16LE;
+
 	return (enum aufmt)-1;
 }
 
 
+static int conf_get_aufmt(const struct conf *conf, const char *name,
+			  int *fmtp)
+{
+	struct pl pl;
+	int fmt;
+	int err;
+
+	err = conf_get(conf, name, &pl);
+	if (err)
+		return err;
+
+	fmt = resolve_aufmt(&pl);
+	if (fmt == -1) {
+		warning("config: %s: sample format not supported"
+			" (%r)\n", name, &pl);
+		return EINVAL;
+	}
+
+	*fmtp = fmt;
+
+	return 0;
+}
+
+
+/**
+ * Parse the core configuration file and update baresip core config
+ *
+ * @param cfg  Baresip core config to update
+ * @param conf Configuration file to parse
+ *
+ * @return 0 if success, otherwise errorcode
+ */
 int config_parse_conf(struct config *cfg, const struct conf *conf)
 {
 	struct pl pollm, as, ap;
 	enum poll_method method;
 	struct vidsz size = {0, 0};
-	struct pl fmt;
+	struct pl txmode;
 	uint32_t v;
 	int err = 0;
 
@@ -220,33 +257,23 @@ int config_parse_conf(struct config *cfg, const struct conf *conf)
 	    0 == conf_get(conf, "audio_player", &ap))
 		cfg->audio.src_first = as.p < ap.p;
 
+	if (0 == conf_get(conf, "audio_txmode", &txmode)) {
+
+		if (0 == pl_strcasecmp(&txmode, "poll"))
+			cfg->audio.txmode = AUDIO_MODE_POLL;
+		else if (0 == pl_strcasecmp(&txmode, "thread"))
+			cfg->audio.txmode = AUDIO_MODE_THREAD;
+		else {
+			warning("unsupported audio txmode (%r)\n", &txmode);
+		}
+	}
+
 	(void)conf_get_bool(conf, "audio_level", &cfg->audio.level);
 
-	if (0 == conf_get(conf, "ausrc_format", &fmt)) {
-
-		cfg->audio.src_fmt = resolve_aufmt(&fmt);
-		if (cfg->audio.src_fmt == -1) {
-			warning("ausrc_format: sample format not supported"
-				" (%r)\n", &fmt);
-			return EINVAL;
-		}
-
-		info("ausrc: using audio sample format `%s'\n",
-		     aufmt_name(cfg->audio.src_fmt));
-	}
-
-	if (0 == conf_get(conf, "auplay_format", &fmt)) {
-
-		cfg->audio.play_fmt = resolve_aufmt(&fmt);
-		if (cfg->audio.play_fmt == -1) {
-			warning("auplay_format: audio format not supported"
-				" (%r)\n", &fmt);
-			return EINVAL;
-		}
-
-		info("auplay: using audio sample format `%s'\n",
-		     aufmt_name(cfg->audio.play_fmt));
-	}
+	conf_get_aufmt(conf, "ausrc_format", &cfg->audio.src_fmt);
+	conf_get_aufmt(conf, "auplay_format", &cfg->audio.play_fmt);
+	conf_get_aufmt(conf, "auenc_format", &cfg->audio.enc_fmt);
+	conf_get_aufmt(conf, "audec_format", &cfg->audio.dec_fmt);
 
 #ifdef USE_VIDEO
 	/* Video */
@@ -305,6 +332,14 @@ int config_parse_conf(struct config *cfg, const struct conf *conf)
 }
 
 
+/**
+ * Print the baresip core config
+ *
+ * @param pf  Print function
+ * @param cfg Baresip core config
+ *
+ * @return 0 if success, otherwise errorcode
+ */
 int config_print(struct re_printf *pf, const struct config *cfg)
 {
 	int err;
@@ -506,7 +541,12 @@ static int core_config_template(struct re_printf *pf, const struct config *cfg)
 			  "#auplay_srate\t\t48000\n"
 			  "#ausrc_channels\t\t0\n"
 			  "#auplay_channels\t\t0\n"
+			  "#audio_txmode\t\tpoll\t\t# poll, thread\n"
 			  "audio_level\t\tno\n"
+			  "ausrc_format\t\ts16\t\t# s16, float, ..\n"
+			  "auplay_format\t\ts16\t\t# s16, float, ..\n"
+			  "auenc_format\t\ts16\t\t# s16, float, ..\n"
+			  "audec_format\t\ts16\t\t# s16, float, ..\n"
 			  ,
 			  poll_method_name(poll_method_best()),
 			  cfg->call.local_timeout,
@@ -515,7 +555,8 @@ static int core_config_template(struct re_printf *pf, const struct config *cfg)
 			  default_audio_device(),
 			  default_audio_device(),
 			  cfg->audio.srate.min, cfg->audio.srate.max,
-			  cfg->audio.channels.min, cfg->audio.channels.max);
+			  cfg->audio.channels.min, cfg->audio.channels.max
+			  );
 
 #ifdef USE_VIDEO
 	err |= re_hprintf(pf,
@@ -525,7 +566,7 @@ static int core_config_template(struct re_printf *pf, const struct config *cfg)
 			  "video_size\t\t%dx%d\n"
 			  "video_bitrate\t\t%u\n"
 			  "video_fps\t\t%u\n"
-			  "video_fullscreen\t\tyes\n",
+			  "video_fullscreen\tyes\n",
 			  default_video_device(),
 			  default_video_display(),
 			  cfg->video.width, cfg->video.height,
@@ -619,6 +660,14 @@ static const char *detect_module_path(bool *valid)
 }
 
 
+/**
+ * Write the baresip core config template to a file
+ *
+ * @param file Filename of output file
+ * @param cfg  Baresip core config
+ *
+ * @return 0 if success, otherwise errorcode
+ */
 int config_write_template(const char *file, const struct config *cfg)
 {
 	FILE *f = NULL;
@@ -809,6 +858,7 @@ int config_write_template(const char *file, const struct config *cfg)
 	(void)re_fprintf(f, "#module_app\t\t" MOD_PRE "natbd"MOD_EXT"\n");
 	(void)re_fprintf(f, "#module_app\t\t" MOD_PRE "presence"MOD_EXT"\n");
 	(void)re_fprintf(f, "#module_app\t\t" MOD_PRE "syslog"MOD_EXT"\n");
+	(void)re_fprintf(f, "#module_app\t\t" MOD_PRE "mqtt" MOD_EXT "\n");
 #ifdef USE_VIDEO
 	(void)re_fprintf(f, "module_app\t\t" MOD_PRE "vidloop"MOD_EXT"\n");
 #endif
@@ -870,6 +920,11 @@ int config_write_template(const char *file, const struct config *cfg)
 }
 
 
+/**
+ * Get the baresip core config
+ *
+ * @return Core config
+ */
 struct config *conf_config(void)
 {
 	return &core_config;

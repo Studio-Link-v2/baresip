@@ -6,7 +6,7 @@ baresip README
 
 
 Baresip is a portable and modular SIP User-Agent with audio and video support.
-Copyright (c) 2010 - 2017 Creytiv.com
+Copyright (c) 2010 - 2018 Creytiv.com
 Distributed under BSD license
 
 
@@ -130,6 +130,7 @@ Distributed under BSD license
   - Command-line console over UDP/TCP
   - Command line interface (CLI)
   - Simple configuration files
+  - MQTT (Message Queue Telemetry Transport) module
 
 
 ## Building
@@ -257,6 +258,7 @@ l16           L16 audio codec
 libsrtp       Secure RTP encryption using libsrtp
 menu          Interactive menu
 mpa           MPA Speech and Audio Codec
+mqtt          MQTT (Message Queue Telemetry Transport) module
 mwi           Message Waiting Indication
 natbd         NAT Behavior Discovery Module
 natpmp        NAT Port Mapping Protocol (NAT-PMP) module

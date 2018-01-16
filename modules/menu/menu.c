@@ -37,7 +37,7 @@ static struct {
 	struct play *play;
 	struct message_lsnr *message;
 	bool bell;
-
+	bool ringback_disabled;	      /**< no ringback on sip 180 respons */
 	struct tmr tmr_redial;        /**< Timer for auto-reconnect       */
 	uint32_t redial_delay;        /**< Redial delay in [seconds]      */
 	uint32_t redial_attempts;     /**< Number of re-dial attempts     */
@@ -774,6 +774,27 @@ static int set_current_call(struct re_printf *pf, void *arg)
 }
 
 
+static int set_audio_bitrate(struct re_printf *pf, void *arg)
+{
+	struct cmd_arg *carg = arg;
+	struct call *call;
+	uint32_t bitrate = atoi(carg->prm);
+	int err;
+
+	call = ua_call(uag_cur());
+	if (call) {
+		err = re_hprintf(pf, "setting audio bitrate: %u bps\n",
+				 bitrate);
+		audio_set_bitrate(call_audio(call), bitrate);
+	}
+	else {
+		err = re_hprintf(pf, "call not found\n");
+	}
+
+	return err;
+}
+
+
 static const struct cmd callcmdv[] = {
 {"reinvite",  'I',        0, "Send re-INVITE",      call_reinvite         },
 {"resume",    'X',        0, "Call resume",         cmd_call_resume       },
@@ -784,6 +805,7 @@ static const struct cmd callcmdv[] = {
 {"hold",      'x',        0, "Call hold",           cmd_call_hold         },
 {"",          'H',        0, "Hold previous call",  hold_prev_call        },
 {"",          'L',        0, "Resume previous call",hold_prev_call        },
+{"aubitrate",   0,  CMD_PRM, "Set audio bitrate",   set_audio_bitrate     },
 
 #ifdef USE_VIDEO
 {"video_cycle", 'E',      0, "Cycle video encoder", call_videoenc_cycle   },
@@ -979,7 +1001,13 @@ static void ua_event_handler(struct ua *ua, enum ua_event ev,
 		/* stop any ringtones */
 		menu.play = mem_deref(menu.play);
 
-		(void)play_file(&menu.play, player, "ringback.wav", -1);
+		if (menu.ringback_disabled) {
+			info("\nRingback disabled\n");
+		}
+		else {
+			(void)play_file(&menu.play, player,
+					"ringback.wav",-1);
+		}
 		break;
 
 	case UA_EVENT_CALL_ESTABLISHED:
@@ -1076,6 +1104,8 @@ static int module_init(void)
 	 * Read the config values
 	 */
 	conf_get_bool(conf_cur(), "menu_bell", &menu.bell);
+	conf_get_bool(conf_cur(), "ringback_disabled",
+		      &menu.ringback_disabled);
 
 	if (0 == conf_get(conf_cur(), "redial_attempts", &val) &&
 	    0 == pl_strcasecmp(&val, "inf")) {
