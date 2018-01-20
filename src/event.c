@@ -79,6 +79,8 @@ static int add_rtcp_stats(struct odict *od_parent, const struct rtcp_stats *rs)
 
  out:
 	mem_deref(od);
+	mem_deref(tx);
+	mem_deref(rx);
 
 	return err;
 }
@@ -96,7 +98,12 @@ int event_encode_dict(struct odict *od, struct ua *ua, enum ua_event ev,
 	err |= odict_entry_add(od, "type", ODICT_STRING, event_str);
 	err |= odict_entry_add(od, "class",
 			       ODICT_STRING, event_class_name(ev));
-	err |= odict_entry_add(od, "accountaor", ODICT_STRING, ua_aor(ua));
+
+	if (ua) {
+		err |= odict_entry_add(od, "accountaor",
+				       ODICT_STRING, ua_aor(ua));
+	}
+
 	if (err)
 		goto out;
 
