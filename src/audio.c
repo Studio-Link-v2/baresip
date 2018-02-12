@@ -450,19 +450,8 @@ static void encode_rtp_send(struct audio *a, struct autx *tx,
 
 	len = mbuf_get_space(tx->mb);
 
-	if (tx->enc_fmt == AUFMT_S16LE) {
-		err = tx->ac->ench(tx->enc, mbuf_buf(tx->mb), &len,
-				   sampv, sampc);
-	}
-	else if (tx->ac->encfmth) {
-		err = tx->ac->encfmth(tx->enc, mbuf_buf(tx->mb), &len,
-				      tx->enc_fmt, sampv, sampc);
-	}
-	else {
-		warning("audio: sample format not supported by encoder (%s)\n",
-			aufmt_name(tx->enc_fmt));
-		return;
-	}
+	err = tx->ac->ench(tx->enc, mbuf_buf(tx->mb), &len,
+			   tx->enc_fmt, sampv, sampc);
 
 	if ((err & 0xffff0000) == 0x00010000) {
 		/* MPA needs some special treatment here */
@@ -533,7 +522,8 @@ static void poll_aubuf_tx(struct audio *a)
 
 		aubuf_read(tx->aubuf, (uint8_t *)tx->sampv, num_bytes);
 	}
-	else {
+	else if (tx->enc_fmt == AUFMT_S16LE) {
+
 		/* Convert from ausrc format to 16-bit format */
 
 		void *tmp_sampv;
@@ -554,6 +544,11 @@ static void poll_aubuf_tx(struct audio *a)
 		auconv_to_s16(sampv, tx->src_fmt, tmp_sampv, sampc);
 
 		mem_deref(tmp_sampv);
+	}
+	else {
+		warning("audio: tx: invalid sample formats (%s -> %s)\n",
+			aufmt_name(tx->src_fmt),
+			aufmt_name(tx->enc_fmt));
 	}
 
 	/* optional resampler */
@@ -766,27 +761,15 @@ static int aurx_stream_decode(struct aurx *rx, struct mbuf *mb)
 
 	if (mbuf_get_left(mb)) {
 
-		if (rx->dec_fmt == AUFMT_S16LE) {
-			err = rx->ac->dech(rx->dec, rx->sampv, &sampc,
-					   mbuf_buf(mb), mbuf_get_left(mb));
+		err = rx->ac->dech(rx->dec,
+				   rx->dec_fmt, rx->sampv, &sampc,
+				   mbuf_buf(mb), mbuf_get_left(mb));
 
-		}
-		else if (rx->ac->decfmth) {
-			err = rx->ac->decfmth(rx->dec,
-					      rx->dec_fmt, rx->sampv, &sampc,
-					      mbuf_buf(mb), mbuf_get_left(mb));
-		}
-		else {
-			warning("audio: sample format not supported"
-				" by decoder (%s)\n",
-				aufmt_name(rx->dec_fmt));
-			return ENOTSUP;
-		}
 	}
 	else if (rx->ac->plch && rx->dec_fmt == AUFMT_S16LE) {
 		sampc = rx->ac->srate * rx->ac->ch * rx->ptime / 1000;
 
-		err = rx->ac->plch(rx->dec, rx->sampv, &sampc);
+		err = rx->ac->plch(rx->dec, rx->dec_fmt, rx->sampv, &sampc);
 	}
 	else {
 		/* no PLC in the codec, might be done in filters below */
@@ -856,7 +839,7 @@ static int aurx_stream_decode(struct aurx *rx, struct mbuf *mb)
 		if (err)
 			goto out;
 	}
-	else {
+	else if (rx->dec_fmt == AUFMT_S16LE) {
 
 		/* Convert from 16-bit to auplay format */
 		void *tmp_sampv;
@@ -882,6 +865,11 @@ static int aurx_stream_decode(struct aurx *rx, struct mbuf *mb)
 
 		if (err)
 			goto out;
+	}
+	else {
+		warning("audio: decode: invalid sample formats (%s -> %s)\n",
+			aufmt_name(rx->dec_fmt),
+			aufmt_name(rx->play_fmt));
 	}
 
 	rx->aubuf_started = true;

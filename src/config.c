@@ -43,7 +43,7 @@ static struct config core_config = {
 
 	/** Audio */
 	{
-		PREFIX "/share/baresip",
+		SHARE_PATH,
 		"","",
 		"","",
 		"","",
@@ -71,6 +71,7 @@ static struct config core_config = {
 		500000,
 		25,
 		true,
+		VID_FMT_YUV420P,
 	},
 #endif
 
@@ -178,6 +179,36 @@ static int conf_get_aufmt(const struct conf *conf, const char *name,
 
 	return 0;
 }
+
+
+#ifdef USE_VIDEO
+static int conf_get_vidfmt(const struct conf *conf, const char *name,
+			   int *fmtp)
+{
+	struct pl pl;
+	int fmt;
+	int err;
+
+	err = conf_get(conf, name, &pl);
+	if (err)
+		return err;
+
+	for (fmt=0; fmt<VID_FMT_N; fmt++) {
+
+		const char *str = vidfmt_name(fmt);
+
+		if (0 == pl_strcasecmp(&pl, str)) {
+
+			*fmtp = fmt;
+			return 0;
+		}
+	}
+
+	warning("config: %s: pixel format not supported (%r)\n", name, &pl);
+
+	return ENOENT;
+}
+#endif
 
 
 /**
@@ -290,6 +321,8 @@ int config_parse_conf(struct config *cfg, const struct conf *conf)
 	(void)conf_get_u32(conf, "video_bitrate", &cfg->video.bitrate);
 	(void)conf_get_u32(conf, "video_fps", &cfg->video.fps);
 	(void)conf_get_bool(conf, "video_fullscreen", &cfg->video.fullscreen);
+
+	conf_get_vidfmt(conf, "videnc_format", &cfg->video.enc_fmt);
 #else
 	(void)size;
 #endif
@@ -527,7 +560,9 @@ static int core_config_template(struct re_printf *pf, const struct config *cfg)
 			  "call_max_calls\t%u\n"
 			  "\n"
 			  "# Audio\n"
-#if defined (PREFIX)
+#if defined (SHARE_PATH)
+			  "#audio_path\t\t" SHARE_PATH "\n"
+#elif defined (PREFIX)
 			  "#audio_path\t\t" PREFIX "/share/baresip\n"
 #else
 			  "#audio_path\t\t/usr/share/baresip\n"
@@ -566,11 +601,14 @@ static int core_config_template(struct re_printf *pf, const struct config *cfg)
 			  "video_size\t\t%dx%d\n"
 			  "video_bitrate\t\t%u\n"
 			  "video_fps\t\t%u\n"
-			  "video_fullscreen\tyes\n",
+			  "video_fullscreen\tyes\n"
+			  "videnc_format\t\t%s\n"
+			  ,
 			  default_video_device(),
 			  default_video_display(),
 			  cfg->video.width, cfg->video.height,
-			  cfg->video.bitrate, cfg->video.fps);
+			  cfg->video.bitrate, cfg->video.fps,
+			  vidfmt_name(cfg->video.enc_fmt));
 #endif
 
 	err |= re_hprintf(pf,
@@ -630,7 +668,9 @@ static uint32_t count_modules(const char *path)
 static const char *detect_module_path(bool *valid)
 {
 	static const char * const pathv[] = {
-#if defined (PREFIX)
+#if defined (MOD_PATH)
+		MOD_PATH,
+#elif defined (PREFIX)
 		"" PREFIX "/lib/baresip/modules",
 #else
 		"/usr/local/lib/baresip/modules",
@@ -859,6 +899,7 @@ int config_write_template(const char *file, const struct config *cfg)
 	(void)re_fprintf(f, "#module_app\t\t" MOD_PRE "presence"MOD_EXT"\n");
 	(void)re_fprintf(f, "#module_app\t\t" MOD_PRE "syslog"MOD_EXT"\n");
 	(void)re_fprintf(f, "#module_app\t\t" MOD_PRE "mqtt" MOD_EXT "\n");
+	(void)re_fprintf(f, "#module_app\t\t" MOD_PRE "ctrl_tcp" MOD_EXT "\n");
 #ifdef USE_VIDEO
 	(void)re_fprintf(f, "module_app\t\t" MOD_PRE "vidloop"MOD_EXT"\n");
 #endif
@@ -874,6 +915,9 @@ int config_write_template(const char *file, const struct config *cfg)
 
 	(void)re_fprintf(f, "\n");
 	(void)re_fprintf(f, "http_listen\t\t0.0.0.0:8000\n");
+
+	(void)re_fprintf(f, "\n");
+	(void)re_fprintf(f, "ctrl_tcp_listen\t\t0.0.0.0:4444\n");
 
 	(void)re_fprintf(f, "\n");
 	(void)re_fprintf(f, "evdev_device\t\t/dev/input/event0\n");

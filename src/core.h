@@ -250,7 +250,7 @@ struct metric {
 void     metric_init(struct metric *metric);
 void     metric_reset(struct metric *metric);
 void     metric_add_packet(struct metric *metric, size_t packetsize);
-uint32_t metric_avg_bitrate(const struct metric *metric);
+double   metric_avg_bitrate(const struct metric *metric);
 
 
 /*
@@ -377,6 +377,7 @@ struct stream {
 	uint64_t ts_last;        /**< Timestamp of last received RTP pkt    */
 	bool terminated;         /**< Stream is terminated flag             */
 	uint32_t rtp_timeout_ms; /**< RTP Timeout value in [ms]             */
+	bool rtp_estab;          /**< True if RTP stream is established     */
 };
 
 int  stream_alloc(struct stream **sp, const struct stream_param *prm,

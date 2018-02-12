@@ -26,6 +26,11 @@
 #endif
 
 
+#ifndef AV_INPUT_BUFFER_MIN_SIZE
+#define AV_INPUT_BUFFER_MIN_SIZE FF_MIN_BUFFER_SIZE
+#endif
+
+
 enum {
 	DEFAULT_GOP_SIZE =   10,
 };
@@ -513,7 +518,7 @@ int encode_update(struct videnc_state **vesp, const struct vidcodec *vc,
 		goto out;
 	}
 
-	st->mb  = mbuf_alloc(FF_MIN_BUFFER_SIZE * 20);
+	st->mb  = mbuf_alloc(AV_INPUT_BUFFER_MIN_SIZE * 20);
 	st->mb_frag = mbuf_alloc(1024);
 	if (!st->mb || !st->mb_frag) {
 		err = ENOMEM;
@@ -579,6 +584,11 @@ int encode_x264(struct videnc_state *st, bool update,
 	case VID_FMT_NV12:
 		csp = X264_CSP_NV12;
 		pln = 2;
+		break;
+
+	case VID_FMT_YUV444P:
+		csp = X264_CSP_I444;
+		pln = 3;
 		break;
 
 	default:
@@ -673,6 +683,10 @@ int encode(struct videnc_state *st, bool update, const struct vidframe *frame)
 
 	case VID_FMT_NV12:
 		pix_fmt = AV_PIX_FMT_NV12;
+		break;
+
+	case VID_FMT_YUV444P:
+		pix_fmt = AV_PIX_FMT_YUV444P;
 		break;
 
 	default:

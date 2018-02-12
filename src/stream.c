@@ -110,8 +110,8 @@ static void print_rtp_stats(const struct stream *s)
 	     ,
 	     sdp_media_name(s->sdp),
 	     s->metric_tx.n_packets, s->metric_rx.n_packets,
-	     1.0*metric_avg_bitrate(&s->metric_tx)/1000,
-	     1.0*metric_avg_bitrate(&s->metric_rx)/1000,
+	     1.0*metric_avg_bitrate(&s->metric_tx)/1000.0,
+	     1.0*metric_avg_bitrate(&s->metric_rx)/1000.0,
 	     s->metric_tx.n_err, s->metric_rx.n_err
 	     );
 
@@ -222,6 +222,13 @@ static void rtp_handler(const struct sa *src, const struct rtp_header *hdr,
 		return;
 
 	metric_add_packet(&s->metric_rx, mbuf_get_left(mb));
+
+	if (!s->rtp_estab) {
+		info("stream: incoming rtp for '%s' established"
+		     ", receiving from %J\n",
+		     sdp_media_name(s->sdp), src);
+		s->rtp_estab = true;
+	}
 
 	if (hdr->ssrc != s->ssrc_rx) {
 		if (s->ssrc_rx) {

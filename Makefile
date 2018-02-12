@@ -13,7 +13,7 @@
 USE_VIDEO := 1
 
 PROJECT	  := baresip
-VERSION   := 0.5.7
+VERSION   := 0.5.8
 DESCR     := "Baresip is a modular SIP User-Agent with audio and video support"
 
 # Verbose and silent build modes
@@ -66,9 +66,12 @@ ifeq ($(OS),win32)
 STATIC    := yes
 endif
 
-ifeq ($(OS),freebsd)
 ifneq ($(SYSROOT),)
+ifeq ($(OS),freebsd)
 CFLAGS += -I$(SYSROOT)/local/include
+endif
+ifeq ($(OS),openbsd)
+CFLAGS += -isystem $(SYSROOT)/local/include
 endif
 endif
 
@@ -106,6 +109,8 @@ LIBDIR     := $(PREFIX)/lib
 MOD_PATH   := $(LIBDIR)/$(PROJECT)/modules
 SHARE_PATH := $(PREFIX)/share/$(PROJECT)
 CFLAGS     += -DPREFIX=\"$(PREFIX)\"
+CFLAGS    += -DMOD_PATH=\"$(MOD_PATH)\"
+CFLAGS    += -DSHARE_PATH=\"$(SHARE_PATH)\"
 
 
 all: sanity $(MOD_BINS) $(BIN)

@@ -13,7 +13,7 @@ extern "C" {
 
 
 /** Defines the Baresip version string */
-#define BARESIP_VERSION "0.5.7"
+#define BARESIP_VERSION "0.5.8"
 
 
 #ifndef NET_MAX_NS
@@ -221,6 +221,7 @@ struct config_video {
 	uint32_t bitrate;       /**< Encoder bitrate in [bit/s]     */
 	uint32_t fps;           /**< Video framerate                */
 	bool fullscreen;        /**< Enable fullscreen display      */
+	int enc_fmt;            /**< Encoder pixelfmt (enum vidfmt) */
 };
 #endif
 
@@ -489,7 +490,7 @@ void log_register_handler(struct log *logh);
 void log_unregister_handler(struct log *logh);
 void log_enable_debug(bool enable);
 void log_enable_info(bool enable);
-void log_enable_stderr(bool enable);
+void log_enable_stdout(bool enable);
 void vlog(enum log_level level, const char *fmt, va_list ap);
 void loglv(enum log_level level, const char *fmt, ...);
 void debug(const char *fmt, ...);
@@ -839,21 +840,17 @@ struct aucodec;
 typedef int (auenc_update_h)(struct auenc_state **aesp,
 			     const struct aucodec *ac,
 			     struct auenc_param *prm, const char *fmtp);
-typedef int (auenc_encode_h)(struct auenc_state *aes, uint8_t *buf,
-			     size_t *len, const int16_t *sampv, size_t sampc);
-typedef int (auenc_encode_fmt_h)(struct auenc_state *aes,
-				 uint8_t *buf, size_t *len,
-				 int fmt, const void *sampv, size_t sampc);
+typedef int (auenc_encode_h)(struct auenc_state *aes,
+			     uint8_t *buf, size_t *len,
+			     int fmt, const void *sampv, size_t sampc);
 
 typedef int (audec_update_h)(struct audec_state **adsp,
 			     const struct aucodec *ac, const char *fmtp);
-typedef int (audec_decode_h)(struct audec_state *ads, int16_t *sampv,
-			     size_t *sampc, const uint8_t *buf, size_t len);
-typedef int (audec_decode_fmt_h)(struct audec_state *ads,
-				 int fmt, void *sampv, size_t *sampc,
-				 const uint8_t *buf, size_t len);
+typedef int (audec_decode_h)(struct audec_state *ads,
+			     int fmt, void *sampv, size_t *sampc,
+			     const uint8_t *buf, size_t len);
 typedef int (audec_plc_h)(struct audec_state *ads,
-			  int16_t *sampv, size_t *sampc);
+			  int fmt, void *sampv, size_t *sampc);
 
 struct aucodec {
 	struct le le;
@@ -870,8 +867,6 @@ struct aucodec {
 	audec_plc_h    *plch;
 	sdp_fmtp_enc_h *fmtp_ench;
 	sdp_fmtp_cmp_h *fmtp_cmph;
-	auenc_encode_fmt_h *encfmth;
-	audec_decode_fmt_h *decfmth;
 };
 
 void aucodec_register(struct list *aucodecl, struct aucodec *ac);

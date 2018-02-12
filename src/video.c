@@ -18,12 +18,6 @@
 #include "magic.h"
 
 
-/** Internal video-encoder format */
-#ifndef VIDENC_INTERNAL_FMT
-#define VIDENC_INTERNAL_FMT (VID_FMT_YUV420P)
-#endif
-
-
 enum {
 	MAX_MUTED_FRAMES = 3,
 };
@@ -134,6 +128,7 @@ struct vrx {
 	struct list filtl;                 /**< Filters in decoding order */
 	struct tmr tmr_picup;              /**< Picture update timer      */
 	struct vidsz size;                 /**< Incoming video resolution */
+	enum vidfmt fmt;                   /**< Incoming pixel format     */
 	enum vidorient orient;             /**< Display orientation       */
 	char device[128];                  /**< Display device name       */
 	int pt_rx;                         /**< Incoming RTP payload type */
@@ -403,13 +398,14 @@ static void encode_rtp_send(struct vtx *vtx, struct vidframe *frame)
 	lock_write_get(vtx->lock);
 
 	/* Convert image */
-	if (frame->fmt != VIDENC_INTERNAL_FMT) {
+	if (frame->fmt != (enum vidfmt)vtx->video->cfg.enc_fmt) {
 
 		vtx->vsrc_size = frame->size;
 
 		if (!vtx->frame) {
 
-			err = vidframe_alloc(&vtx->frame, VIDENC_INTERNAL_FMT,
+			err = vidframe_alloc(&vtx->frame,
+					     vtx->video->cfg.enc_fmt,
 					     &vtx->vsrc_size);
 			if (err)
 				goto unlock;
@@ -521,6 +517,7 @@ static int vrx_alloc(struct vrx *vrx, struct video *video)
 	str_ncpy(vrx->device, video->cfg.disp_dev, sizeof(vrx->device));
 
 	vrx->ts_min = ~0;
+	vrx->fmt = (enum vidfmt)-1;
 
 	return err;
 }
@@ -617,6 +614,7 @@ static int video_stream_decode(struct vrx *vrx, const struct rtp_header *hdr,
 		goto out;
 
 	vrx->size = frame->size;
+	vrx->fmt  = frame->fmt;
 
 	if (!list_isempty(&vrx->filtl)) {
 
@@ -938,7 +936,7 @@ static int set_encoder_format(struct vtx *vtx, const char *src,
 	}
 
 	vtx->mute_frame = mem_deref(vtx->mute_frame);
-	err = vidframe_alloc(&vtx->mute_frame, VIDENC_INTERNAL_FMT, size);
+	err = vidframe_alloc(&vtx->mute_frame, vtx->video->cfg.enc_fmt, size);
 	if (err)
 		return err;
 
@@ -1326,8 +1324,9 @@ static int vrx_debug(struct re_printf *pf, const struct vrx *vrx)
 {
 	int err = 0;
 
-	err |= re_hprintf(pf, " rx: decode: %s\n",
-			  vrx->vc ? vrx->vc->name : "none");
+	err |= re_hprintf(pf, " rx: decode: %s %s\n",
+			  vrx->vc ? vrx->vc->name : "none",
+			  vidfmt_name(vrx->fmt));
 	err |= re_hprintf(pf, "     vidisp: %s %u x %u\n",
 			  vrx->vidisp ? vidisp_get(vrx->vidisp)->name : "none",
 			  vrx->size.w, vrx->size.h);

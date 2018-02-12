@@ -12,7 +12,7 @@ static struct {
 	struct list logl;
 	bool debug;
 	bool info;
-	bool stder;
+	bool enable_stdout;
 } lg = {
 	LIST_INIT,
 	false,
@@ -21,6 +21,11 @@ static struct {
 };
 
 
+/**
+ * Register a log handler
+ *
+ * @param log Log handler
+ */
 void log_register_handler(struct log *log)
 {
 	if (!log)
@@ -30,6 +35,11 @@ void log_register_handler(struct log *log)
 }
 
 
+/**
+ * Unregister a log handler
+ *
+ * @param log Log handler
+ */
 void log_unregister_handler(struct log *log)
 {
 	if (!log)
@@ -39,24 +49,46 @@ void log_unregister_handler(struct log *log)
 }
 
 
+/**
+ * Enable debug-level logging
+ *
+ * @param enable True to enable, false to disable
+ */
 void log_enable_debug(bool enable)
 {
 	lg.debug = enable;
 }
 
 
+/**
+ * Enable info-level logging
+ *
+ * @param enable True to enable, false to disable
+ */
 void log_enable_info(bool enable)
 {
 	lg.info = enable;
 }
 
 
-void log_enable_stderr(bool enable)
+/**
+ * Enable logging to standard-out
+ *
+ * @param enable True to enable, false to disable
+ */
+void log_enable_stdout(bool enable)
 {
-	lg.stder = enable;
+	lg.enable_stdout = enable;
 }
 
 
+/**
+ * Print a message to the logging system
+ *
+ * @param level Log level
+ * @param fmt   Formatted message
+ * @param ap    Variable argument list
+ */
 void vlog(enum log_level level, const char *fmt, va_list ap)
 {
 	char buf[4096];
@@ -65,7 +97,7 @@ void vlog(enum log_level level, const char *fmt, va_list ap)
 	if (re_vsnprintf(buf, sizeof(buf), fmt, ap) < 0)
 		return;
 
-	if (lg.stder) {
+	if (lg.enable_stdout) {
 
 		bool color = level == LEVEL_WARN || level == LEVEL_ERROR;
 
@@ -91,6 +123,13 @@ void vlog(enum log_level level, const char *fmt, va_list ap)
 }
 
 
+/**
+ * Print a message to the logging system
+ *
+ * @param level Log level
+ * @param fmt   Formatted message
+ * @param ...   Variable arguments
+ */
 void loglv(enum log_level level, const char *fmt, ...)
 {
 	va_list ap;
@@ -107,6 +146,12 @@ void loglv(enum log_level level, const char *fmt, ...)
 }
 
 
+/**
+ * Print a DEBUG message to the logging system
+ *
+ * @param fmt   Formatted message
+ * @param ...   Variable arguments
+ */
 void debug(const char *fmt, ...)
 {
 	va_list ap;
@@ -120,6 +165,12 @@ void debug(const char *fmt, ...)
 }
 
 
+/**
+ * Print an INFO message to the logging system
+ *
+ * @param fmt   Formatted message
+ * @param ...   Variable arguments
+ */
 void info(const char *fmt, ...)
 {
 	va_list ap;
@@ -133,6 +184,12 @@ void info(const char *fmt, ...)
 }
 
 
+/**
+ * Print a WARNING message to the logging system
+ *
+ * @param fmt   Formatted message
+ * @param ...   Variable arguments
+ */
 void warning(const char *fmt, ...)
 {
 	va_list ap;
@@ -143,6 +200,12 @@ void warning(const char *fmt, ...)
 }
 
 
+/**
+ * Print an ERROR message to the logging system
+ *
+ * @param fmt   Formatted message
+ * @param ...   Variable arguments
+ */
 void error_msg(const char *fmt, ...)
 {
 	va_list ap;
