@@ -16,8 +16,7 @@ struct videnc_state {
 	struct vidsz size;
 	x265_param *param;
 	x265_encoder *x265;
-	int64_t pts;
-	unsigned fps;
+	double fps;
 	unsigned bitrate;
 	unsigned pktsize;
 	videnc_packet_h *pkth;
@@ -36,7 +35,7 @@ static void destructor(void *arg)
 }
 
 
-static int set_params(struct videnc_state *st, unsigned fps, unsigned bitrate)
+static int set_params(struct videnc_state *st, double fps, unsigned bitrate)
 {
 	st->param = x265_param_alloc();
 	if (!st->param) {
@@ -140,7 +139,7 @@ static int open_encoder(struct videnc_state *st, const struct vidsz *size)
 
 
 static inline int packetize(bool marker, const uint8_t *buf, size_t len,
-			    size_t maxlen, uint32_t rtp_ts,
+			    size_t maxlen, uint64_t rtp_ts,
 			    videnc_packet_h *pkth, void *arg)
 {
 	int err = 0;
@@ -188,14 +187,14 @@ static inline int packetize(bool marker, const uint8_t *buf, size_t len,
 
 
 int h265_encode(struct videnc_state *st, bool update,
-		const struct vidframe *frame)
+		const struct vidframe *frame, uint64_t timestamp)
 {
 	x265_picture *pic_in = NULL, pic_out;
 	x265_nal *nalv;
 	uint32_t i, nalc = 0;
 	int colorspace;
 	int n, err = 0;
-	uint32_t ts;
+	uint64_t ts;
 
 	if (!st || !frame)
 		return EINVAL;
@@ -244,7 +243,7 @@ int h265_encode(struct videnc_state *st, bool update,
 	x265_picture_init(st->param, pic_in);
 
 	pic_in->sliceType  = update ? X265_TYPE_IDR : X265_TYPE_AUTO;
-	pic_in->pts        = ++st->pts;      /* XXX: add PTS to API */
+	pic_in->pts        = timestamp;      /* XXX: add PTS to API */
 	pic_in->colorSpace = colorspace;
 
 	for (i=0; i<3; i++) {
@@ -257,7 +256,7 @@ int h265_encode(struct videnc_state *st, bool update,
 	if (n <= 0)
 		goto out;
 
-	ts = video_calc_rtp_timestamp(pic_out.pts, st->fps);
+	ts = video_calc_rtp_timestamp_fix(pic_out.pts);
 
 	for (i=0; i<nalc; i++) {
 

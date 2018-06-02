@@ -106,6 +106,28 @@ static void print_video_input(const struct vidsrc_st *st)
 }
 
 
+static void print_framerate(const struct vidsrc_st *st)
+{
+	struct v4l2_streamparm streamparm;
+	struct v4l2_fract tpf;
+	double fps;
+
+	memset(&streamparm, 0, sizeof(streamparm));
+
+	streamparm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+
+	if (v4l2_ioctl(st->fd, VIDIOC_G_PARM, &streamparm) != 0) {
+		warning("v4l2: VIDIOC_G_PARM error (%m)\n", errno);
+		return;
+	}
+
+	tpf = streamparm.parm.capture.timeperframe;
+	fps = (double)tpf.denominator / (double)tpf.numerator;
+
+	info("v4l2: current framerate is %.2f fps\n", fps);
+}
+
+
 static int xioctl(int fd, unsigned long int request, void *arg)
 {
 	int r;
@@ -331,19 +353,22 @@ static int start_capturing(struct vidsrc_st *st)
 }
 
 
-static void call_frame_handler(struct vidsrc_st *st, uint8_t *buf)
+static void call_frame_handler(struct vidsrc_st *st, uint8_t *buf,
+			       uint64_t timestamp)
 {
 	struct vidframe frame;
 
 	vidframe_init_buf(&frame, match_fmt(st->pixfmt), &st->sz, buf);
 
-	st->frameh(&frame, st->arg);
+	st->frameh(&frame, timestamp, st->arg);
 }
 
 
 static int read_frame(struct vidsrc_st *st)
 {
 	struct v4l2_buffer buf;
+	struct timeval ts;
+	uint64_t timestamp;
 
 	memset(&buf, 0, sizeof(buf));
 
@@ -371,7 +396,11 @@ static int read_frame(struct vidsrc_st *st)
 		warning("v4l2: index >= n_buffers\n");
 	}
 
-	call_frame_handler(st, st->buffers[buf.index].start);
+	ts = buf.timestamp;
+	timestamp = 1000000U * ts.tv_sec + ts.tv_usec;
+	timestamp = timestamp * VIDEO_TIMEBASE / 1000000U;
+
+	call_frame_handler(st, st->buffers[buf.index].start, timestamp);
 
 	if (-1 == xioctl (st->fd, VIDIOC_QBUF, &buf)) {
 		warning("v4l2: VIDIOC_QBUF\n");
@@ -469,6 +498,8 @@ static int alloc(struct vidsrc_st **stp, const struct vidsrc *vs,
 		goto out;
 
 	print_video_input(st);
+
+	print_framerate(st);
 
 	err = start_capturing(st);
 	if (err)

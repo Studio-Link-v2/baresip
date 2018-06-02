@@ -75,7 +75,6 @@ Distributed under BSD license
   - MPA
   - Opus
   - Silk
-  - Speex
 
 * Audio-drivers:
   - Advanced Linux Sound Architecture (ALSA) audio-driver
@@ -195,7 +194,7 @@ The baresip project is using the BSD license.
 
 ## Contributing
 
-Patches can sent via Github
+Patches can be sent via Github
 [Pull-Requests](https://github.com/creytiv/baresip/pulls) or to the RE devel
 [mailing-list](http://lists.creytiv.com/mailman/listinfo/re-devel).
 
@@ -283,7 +282,7 @@ silk          SILK audio codec
 snapshot      Save video-stream as PNG images
 sndfile       Audio dumper using libsndfile
 sndio         Audio driver for OpenBSD
-speex         Speex audio codec
+speex         Speex audio codec (deprecated)
 speex_aec     Acoustic Echo Cancellation (AEC) using libspeexdsp
 speex_pp      Audio pre-processor using libspeexdsp
 srtp          Secure RTP encryption (SDES) using libre SRTP-stack
@@ -392,7 +391,7 @@ zrtp          ZRTP media encryption module
 
 ## Supported platforms:
 
-* Android
+* Android (5.0 or later)
 * Apple Mac OS X and iOS
 * FreeBSD
 * Linux

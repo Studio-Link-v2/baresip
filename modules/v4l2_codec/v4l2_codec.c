@@ -277,7 +277,7 @@ static void enc_destructor(void *arg)
 }
 
 
-static void encoders_read(uint32_t rtp_ts, const uint8_t *buf, size_t sz)
+static void encoders_read(uint64_t rtp_ts, const uint8_t *buf, size_t sz)
 {
 	struct le *le;
 	int err;
@@ -301,7 +301,7 @@ static void read_handler(int flags, void *arg)
 	struct v4l2_buffer buf;
 	bool keyframe = false;
 	struct timeval ts;
-	uint32_t rtp_ts;
+	uint64_t rtp_ts;
 	int err;
 
 	if (flags & FD_EXCEPT) {
@@ -349,10 +349,11 @@ static void read_handler(int flags, void *arg)
 	rtp_ts = (90000ULL * (1000000*ts.tv_sec + ts.tv_usec)) / 1000000;
 
 #if 0
-	debug("v4l2_codec: %s frame captured at %ldsec, %ldusec (%zu bytes)\n",
+	debug("v4l2_codec: %s frame captured at %ldsec, %ldusec"
+	      " (%zu bytes) rtp_ts=%llu\n",
 	      keyframe ? "KEY" : "   ",
 	      buf.timestamp.tv_sec, buf.timestamp.tv_usec,
-	      (size_t)buf.bytesused);
+	      (size_t)buf.bytesused, rtp_ts);
 #endif
 
 	/* pass the frame to the encoders */
@@ -429,7 +430,7 @@ static int encode_update(struct videnc_state **vesp, const struct vidcodec *vc,
 
 	list_append(&v4l2.encoderl, &st->le, st);
 
-	info("v4l2_codec: video encoder %s: %d fps, %d bit/s, pktsize=%u\n",
+	info("v4l2_codec: video encoder %s: %.2f fps, %d bit/s, pktsize=%u\n",
 	      vc->name, prm->fps, prm->bitrate, prm->pktsize);
 
 	if (err)
@@ -443,11 +444,20 @@ static int encode_update(struct videnc_state **vesp, const struct vidcodec *vc,
 
 /* note: dummy function, the input is unused */
 static int encode_packet(struct videnc_state *st, bool update,
-			 const struct vidframe *frame)
+			 const struct vidframe *frame, uint64_t timestamp)
 {
 	(void)st;
 	(void)update;
 	(void)frame;
+	(void)timestamp;
+
+	/*
+	 * XXX: add support for KEY frame requests
+	 */
+	if (update) {
+		info("v4l2_codec: peer requested a KEY frame (ignored)\n");
+	}
+
 	return 0;
 }
 

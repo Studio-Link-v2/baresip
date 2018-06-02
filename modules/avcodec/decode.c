@@ -16,13 +16,6 @@
 #include "avcodec.h"
 
 
-#if LIBAVUTIL_VERSION_MAJOR < 52
-#define AV_PIX_FMT_YUV420P PIX_FMT_YUV420P
-#define AV_PIX_FMT_YUVJ420P PIX_FMT_YUVJ420P
-#define AV_PIX_FMT_NV12    PIX_FMT_NV12
-#endif
-
-
 enum {
 	DECODE_MAXSZ = 524288,
 };
@@ -37,6 +30,7 @@ struct viddec_state {
 	size_t frag_start;
 	bool frag;
 	uint16_t frag_seq;
+	double fps;
 
 	struct {
 		unsigned n_key;
@@ -237,6 +231,8 @@ static int ffdecode(struct viddec_state *st, struct vidframe *frame)
 
 	if (got_picture) {
 
+		double fps;
+
 #if LIBAVCODEC_VERSION_INT >= ((53<<16)+(5<<8)+0)
 		switch (st->pict->format) {
 
@@ -270,6 +266,18 @@ static int ffdecode(struct viddec_state *st, struct vidframe *frame)
 		}
 		frame->size.w = st->ctx->width;
 		frame->size.h = st->ctx->height;
+
+#if LIBAVCODEC_VERSION_INT > ((56<<16)+(1<<8)+0)
+		/* get the framerate of the decoded bitstream */
+		fps = av_q2d(st->ctx->framerate);
+		if (st->fps != fps) {
+			st->fps = fps;
+			debug("avcodec: current decoder framerate"
+			      " is %.2f fps\n", fps);
+		}
+#else
+		(void)fps;
+#endif
 	}
 
  out:
@@ -291,10 +299,11 @@ int decode_h264(struct viddec_state *st, struct vidframe *frame,
 		return err;
 
 #if 0
-	re_printf("avcodec: decode: %s %s type=%2d  \n",
+	re_printf("avcodec: decode: %s %s type=%2d %s  \n",
 		  marker ? "[M]" : "   ",
 		  h264_is_keyframe(h264_hdr.type) ? "<KEY>" : "     ",
-		  h264_hdr.type);
+		  h264_hdr.type,
+		  h264_nalunit_name(h264_hdr.type));
 #endif
 
 	if (h264_hdr.f) {
@@ -335,11 +344,10 @@ int decode_h264(struct viddec_state *st, struct vidframe *frame,
 
 		if (fu.s) {
 			if (st->frag) {
-				debug("avcodec: lost fragments;"
-				      " ignoring NAL\n");
+				debug("avcodec: start: lost fragments;"
+				      " ignoring previous NAL\n");
 				fragment_rewind(st);
 				++st->stats.n_lost;
-				return EPROTO;
 			}
 
 			st->frag_start = st->mb->pos;
@@ -356,9 +364,10 @@ int decode_h264(struct viddec_state *st, struct vidframe *frame,
 		}
 		else {
 			if (!st->frag) {
-				debug("avcodec: ignoring fragment\n");
+				debug("avcodec: ignoring fragment"
+				      " (nal=%u)\n", fu.type);
 				++st->stats.n_lost;
-				return EPROTO;
+				return 0;
 			}
 
 			if (seq_diff(st->frag_seq, seq) != 1) {
@@ -366,7 +375,7 @@ int decode_h264(struct viddec_state *st, struct vidframe *frame,
 				fragment_rewind(st);
 				st->frag = false;
 				++st->stats.n_lost;
-				return EPROTO;
+				return 0;
 			}
 		}
 

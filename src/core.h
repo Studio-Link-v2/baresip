@@ -201,6 +201,7 @@ int conf_get_range(const struct conf *conf, const char *name,
 		   struct range *rng);
 int conf_get_csv(const struct conf *conf, const char *name,
 		 char *str1, size_t sz1, char *str2, size_t sz2);
+int conf_get_float(const struct conf *conf, const char *name, double *val);
 
 
 /*
@@ -378,6 +379,7 @@ struct stream {
 	bool terminated;         /**< Stream is terminated flag             */
 	uint32_t rtp_timeout_ms; /**< RTP Timeout value in [ms]             */
 	bool rtp_estab;          /**< True if RTP stream is established     */
+	bool hold;               /**< Stream is on-hold (local)             */
 };
 
 int  stream_alloc(struct stream **sp, const struct stream_param *prm,
@@ -418,36 +420,6 @@ void         ua_printf(const struct ua *ua, const char *fmt, ...);
 
 struct tls  *uag_tls(void);
 const char  *uag_allowed_methods(void);
-
-
-/*
- * Video Display
- */
-
-struct vidisp {
-	struct le        le;
-	const char      *name;
-	vidisp_alloc_h  *alloch;
-	vidisp_update_h *updateh;
-	vidisp_disp_h   *disph;
-	vidisp_hide_h   *hideh;
-};
-
-struct vidisp *vidisp_get(struct vidisp_st *st);
-
-
-/*
- * Video Source
- */
-
-struct vidsrc {
-	struct le         le;
-	const char       *name;
-	vidsrc_alloc_h   *alloch;
-	vidsrc_update_h  *updateh;
-};
-
-struct vidsrc *vidsrc_get(struct vidsrc_st *st);
 
 
 /*
@@ -505,46 +477,5 @@ static inline uint64_t calc_extended_timestamp(uint32_t num_wraps, uint32_t ts)
 }
 
 
-static inline uint64_t timestamp_duration(const struct timestamp_recv *ts)
-{
-	uint64_t last_ext;
-
-	if (!ts || !ts->is_set)
-		return 0;
-
-	last_ext = calc_extended_timestamp(ts->num_wraps, ts->last);
-
-	return last_ext - ts->first;
-}
-
-
-/*
- *  -1  backwards wrap-around
- *   0  no wrap-around
- *   1  forward wrap-around
- */
-static inline int timestamp_wrap(uint32_t ts_new, uint32_t ts_old)
-{
-	int32_t delta;
-
-	if (ts_new < ts_old) {
-
-		delta = (int32_t)ts_new - (int32_t)ts_old;
-
-		if (delta > 0)
-			return 1;
-	}
-	else if ((int32_t)(ts_old - ts_new) > 0) {
-
-		return -1;
-	}
-
-	return 0;
-}
-
-
-/*
- * Timer
- */
-
-uint64_t tmr_jiffies_usec(void);
+int      timestamp_wrap(uint32_t ts_new, uint32_t ts_old);
+uint64_t timestamp_duration(const struct timestamp_recv *ts);

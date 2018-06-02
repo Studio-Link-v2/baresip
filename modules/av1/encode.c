@@ -22,8 +22,7 @@ enum {
 struct videnc_state {
 	aom_codec_ctx_t ctx;
 	struct vidsz size;
-	aom_codec_pts_t pts;
-	unsigned fps;
+	double fps;
 	unsigned bitrate;
 	unsigned pktsize;
 	bool ctxup;
@@ -137,7 +136,7 @@ static inline void hdr_encode(uint8_t hdr[HDR_SIZE], bool noref, bool start,
 }
 
 
-static inline int packetize(bool marker, uint32_t rtp_ts,
+static inline int packetize(bool marker, uint64_t rtp_ts,
 			    const uint8_t *buf, size_t len,
 			    size_t maxlen, bool noref, uint8_t partid,
 			    uint16_t picid, videnc_packet_h *pkth, void *arg)
@@ -168,7 +167,7 @@ static inline int packetize(bool marker, uint32_t rtp_ts,
 
 
 int av1_encode(struct videnc_state *ves, bool update,
-		const struct vidframe *frame)
+		const struct vidframe *frame, uint64_t timestamp)
 {
 	aom_enc_frame_flags_t flags = 0;
 	aom_codec_iter_t iter = NULL;
@@ -209,8 +208,8 @@ int av1_encode(struct videnc_state *ves, bool update,
 		img->planes[i] = frame->data[i];
 	}
 
-	res = aom_codec_encode(&ves->ctx, img, ves->pts++, 1,
-			       flags, AOM_DL_REALTIME);
+	res = aom_codec_encode(&ves->ctx, img, timestamp, 1,
+			       flags);
 	if (res) {
 		warning("av1: enc error: %s\n", aom_codec_err_to_string(res));
 		return ENOMEM;
@@ -222,7 +221,7 @@ int av1_encode(struct videnc_state *ves, bool update,
 		bool keyframe = false, marker = true;
 		const aom_codec_cx_pkt_t *pkt;
 		uint8_t partid = 0;
-		uint32_t ts;
+		uint64_t ts;
 
 		pkt = aom_codec_get_cx_data(&ves->ctx, &iter);
 		if (!pkt)
@@ -240,7 +239,7 @@ int av1_encode(struct videnc_state *ves, bool update,
 		if (pkt->data.frame.partition_id >= 0)
 			partid = pkt->data.frame.partition_id;
 
-		ts = video_calc_rtp_timestamp(pkt->data.frame.pts, ves->fps);
+		ts = video_calc_rtp_timestamp_fix(pkt->data.frame.pts);
 
 		err = packetize(marker, ts,
 				pkt->data.frame.buf,

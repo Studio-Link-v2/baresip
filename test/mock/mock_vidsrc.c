@@ -14,7 +14,8 @@ struct vidsrc_st {
 
 	struct vidframe *frame;
 	struct tmr tmr;
-	int fps;
+	uint64_t timestamp;
+	double fps;
 	vidsrc_frame_h *frameh;
 	void *arg;
 };
@@ -27,7 +28,9 @@ static void tmr_handler(void *arg)
 	tmr_start(&st->tmr, 1000/st->fps, tmr_handler, st);
 
 	if (st->frameh)
-		st->frameh(st->frame, st->arg);
+		st->frameh(st->frame, st->timestamp, st->arg);
+
+	st->timestamp += VIDEO_TIMEBASE / st->fps;
 }
 
 
@@ -71,7 +74,7 @@ static int mock_vidsrc_alloc(struct vidsrc_st **stp, const struct vidsrc *vs,
 
 	tmr_start(&st->tmr, 0, tmr_handler, st);
 
-	info("mock_vidsrc: new instance with size %u x %u (%d fps)\n",
+	info("mock_vidsrc: new instance with size %u x %u (%.2f fps)\n",
 	     size->w, size->h, prm->fps);
 
  out:

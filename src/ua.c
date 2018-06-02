@@ -30,6 +30,7 @@ struct ua {
 	int af;                      /**< Preferred Address Family           */
 	int af_media;                /**< Preferred Address Family for media */
 	enum presence_status my_status; /**< Presence Status                 */
+	bool catchall;               /**< Catch all inbound requests         */
 };
 
 struct ua_eh {
@@ -201,6 +202,8 @@ int ua_register(struct ua *ua)
 				   acc->regint, acc->outboundv[i]);
 		if (err) {
 			warning("ua: SIP register failed: %m\n", err);
+
+			ua_event(ua, UA_EVENT_REGISTER_FAIL, NULL, "%m", err);
 			goto out;
 		}
 	}
@@ -384,6 +387,10 @@ static void call_event_handler(struct call *call, enum call_event ev,
 
 	case CALL_EVENT_TRANSFER_FAILED:
 		ua_event(ua, UA_EVENT_CALL_TRANSFER_FAILED, call, str);
+		break;
+
+	case CALL_EVENT_MENC:
+		ua_event(ua, UA_EVENT_CALL_MENC, call, str);
 		break;
 	}
 }
@@ -571,7 +578,8 @@ static void add_extension(struct ua *ua, const char *extension)
 	struct pl e;
 
 	if (ua->extensionc >= ARRAY_SIZE(ua->extensionv)) {
-		warning("ua: maximum %u number of SIP extensions\n");
+		warning("ua: maximum %zu number of SIP extensions\n",
+			ARRAY_SIZE(ua->extensionv));
 		return;
 	}
 
@@ -1659,6 +1667,14 @@ struct ua *uag_find(const struct pl *cuser)
 			return ua;
 	}
 
+	/* Last resort, try any catchall UAs */
+	for (le = uag.ual.head; le; le = le->next) {
+		struct ua *ua = le->data;
+
+		if (ua->catchall)
+			return ua;
+	}
+
 	return NULL;
 }
 
@@ -1893,6 +1909,22 @@ void ua_set_media_af(struct ua *ua, int af_media)
 		return;
 
 	ua->af_media = af_media;
+}
+
+
+/**
+ * Enable handling of all inbound requests, even if
+ * the request uri is not matching.
+ *
+ * @param ua      User-Agent
+ * @param enabled True to enable, false to disable
+ */
+void ua_set_catchall(struct ua *ua, bool enabled)
+{
+	if (!ua)
+		return;
+
+	ua->catchall = enabled;
 }
 
 

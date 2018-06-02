@@ -322,8 +322,6 @@ static int sip_params_decode(struct account *acc, const struct sip_addr *aor)
 
 	if (0 == msg_param_decode(&aor->params, "auth_user", &auth_user))
 		err |= pl_strdup(&acc->auth_user, &auth_user);
-	else
-		err |= pl_strdup(&acc->auth_user, &aor->uri.user);
 
 	if (pl_isset(&aor->dname))
 		err |= pl_strdup(&acc->dispname, &aor->dname);
@@ -342,6 +340,14 @@ static int encode_uri_user(struct re_printf *pf, const struct uri *uri)
 }
 
 
+/**
+ * Create a SIP account from a sip address string
+ *
+ * @param accp     Pointer to allocated SIP account object
+ * @param sipaddr  SIP address with parameters
+ *
+ * @return 0 if success, otherwise errorcode
+ */
 int account_alloc(struct account **accp, const char *sipaddr)
 {
 	struct account *acc;
@@ -433,6 +439,36 @@ int account_alloc(struct account **accp, const char *sipaddr)
 }
 
 
+/**
+ * Set the authentication user for a SIP account
+ *
+ * @param acc   User-Agent account
+ * @param user  Authentication username (NULL to reset)
+ *
+ * @return 0 if success, otherwise errorcode
+ */
+int account_set_auth_user(struct account *acc, const char *user)
+{
+	if (!acc)
+		return EINVAL;
+
+	acc->auth_user = mem_deref(acc->auth_user);
+
+	if (user)
+		return str_dup(&acc->auth_user, user);
+
+	return 0;
+}
+
+
+/**
+ * Set the authentication password for a SIP account
+ *
+ * @param acc   User-Agent account
+ * @param pass  Authentication password (NULL to reset)
+ *
+ * @return 0 if success, otherwise errorcode
+ */
 int account_set_auth_pass(struct account *acc, const char *pass)
 {
 	if (!acc)
@@ -442,6 +478,126 @@ int account_set_auth_pass(struct account *acc, const char *pass)
 
 	if (pass)
 		return str_dup(&acc->auth_pass, pass);
+
+	return 0;
+}
+
+
+/**
+ * Set an outbound proxy for a SIP account
+ *
+ * @param acc  User-Agent account
+ * @param ob   Outbound proxy
+ * @param ix   Index of outbound proxy
+ *
+ * @return 0 if success, otherwise errorcode
+ */
+int account_set_outbound(struct account *acc, const char *ob, unsigned ix)
+{
+	if (!acc || ix >= ARRAY_SIZE(acc->outboundv))
+		return EINVAL;
+
+	acc->outboundv[ix] = mem_deref(acc->outboundv[ix]);
+
+	if (ob)
+		return str_dup(&(acc->outboundv[ix]), ob);
+
+	return 0;
+}
+
+
+/**
+ * Set the SIP nat protocol for a SIP account
+ *
+ * @param acc     User-Agent account
+ * @param sipnat  SIP nat protocol
+ *
+ * @return 0 if success, otherwise errorcode
+ */
+int account_set_sipnat(struct account *acc, const char *sipnat)
+{
+	if (!acc)
+		return EINVAL;
+
+	acc->sipnat = mem_deref(acc->sipnat);
+
+	if (sipnat)
+		return str_dup(&acc->sipnat, sipnat);
+
+	return 0;
+}
+
+
+/**
+ * Set the SIP registration interval for a SIP account
+ *
+ * @param acc     User-Agent account
+ * @param regint  Registration interval in [seconds]
+ *
+ * @return 0 if success, otherwise errorcode
+ */
+int account_set_regint(struct account *acc, uint32_t regint)
+{
+	if (!acc)
+		return EINVAL;
+
+	acc->regint = regint;
+
+	return 0;
+}
+
+
+/**
+ * Set the media encryption for a SIP account
+ *
+ * @param acc     User-Agent account
+ * @param mencid  Media encryption id
+ *
+ * @return 0 if success, otherwise errorcode
+ */
+int account_set_mediaenc(struct account *acc, const char *mencid)
+{
+	if (!acc)
+		return EINVAL;
+
+	if (mencid && !menc_find(baresip_mencl(), mencid)) {
+		warning("account: mediaenc not found: `%s'\n",
+			mencid);
+		return EINVAL;
+	}
+
+	acc->mencid = mem_deref(acc->mencid);
+
+	if (mencid)
+		return str_dup(&acc->mencid, mencid);
+
+	return 0;
+}
+
+
+/**
+ * Sets audio codecs
+ *
+ * @param acc      User-Agent account
+ * @param codecs   Comma separed list of audio codecs (NULL to disable)
+ *
+ * @return 0 if success, otherwise errorcode
+ */
+int account_set_audio_codecs(struct account *acc, const char *codecs)
+{
+	char buf[256];
+	struct pl pl;
+
+	if (!acc)
+		return EINVAL;
+
+	list_clear(&acc->aucodecl);
+
+	if (codecs) {
+		re_snprintf(buf, sizeof buf, ";audio_codecs=%s", codecs);
+		pl_set_str(&pl, buf);
+		return audio_codecs_decode(acc, &pl);
+	}
 
 	return 0;
 }
@@ -482,15 +638,21 @@ int account_set_display_name(struct account *acc, const char *dname)
 int account_auth(const struct account *acc, char **username, char **password,
 		 const char *realm)
 {
+	int err = 0;
+
 	if (!acc)
 		return EINVAL;
 
 	(void)realm;
 
-	*username = mem_ref(acc->auth_user);
+	if (acc->auth_user)
+		*username = mem_ref(acc->auth_user);
+	else
+		err = pl_strdup(username, &(acc->luri.user));
+
 	*password = mem_ref(acc->auth_pass);
 
-	return 0;
+	return err;
 }
 
 
@@ -531,6 +693,12 @@ uint32_t account_pubint(const struct account *acc)
 enum answermode account_answermode(const struct account *acc)
 {
 	return acc ? acc->answermode : ANSWERMODE_MANUAL;
+}
+
+
+const char *account_display_name(const struct account *acc)
+{
+	return acc ? acc->dispname : NULL;
 }
 
 
@@ -580,6 +748,19 @@ const char *account_outbound(const struct account *acc, unsigned ix)
 		return NULL;
 
 	return acc->outboundv[ix];
+}
+
+
+/**
+ * Get sipnat protocol of an account
+ *
+ * @param acc User-Agent account
+ *
+ * @return sipnat protocol or NULL if not set
+ */
+const char *account_sipnat(const struct account *acc)
+{
+	return acc ? acc->sipnat : NULL;
 }
 
 
@@ -644,6 +825,12 @@ static const char *answermode_str(enum answermode mode)
 	case ANSWERMODE_AUTO:   return "auto";
 	default: return "???";
 	}
+}
+
+
+const char *account_mediaenc(const struct account *acc)
+{
+	return acc ? acc->mencid : NULL;
 }
 
 

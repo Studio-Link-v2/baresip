@@ -67,7 +67,7 @@ struct call {
 	time_t time_stop;         /**< Time when call stopped               */
 	bool outgoing;            /**< True if outgoing, false if incoming  */
 	bool got_offer;           /**< Got SDP Offer from Peer              */
-	bool on_hold;             /**< True if call is on hold              */
+	bool on_hold;             /**< True if call is on hold (local)      */
 	struct mnat_sess *mnats;  /**< Media NAT session                    */
 	bool mnat_wait;           /**< Waiting for MNAT to establish        */
 	struct menc_sess *mencs;  /**< Media encryption session state       */
@@ -450,6 +450,20 @@ static void menc_error_handler(int err, void *arg)
 }
 
 
+static void menc_event_handler(const enum menc_event event,
+			       const char *prm, void *arg)
+{
+	struct call *call = arg;
+	MAGIC_CHECK(call);
+
+	if (strlen(prm) > 0)
+		call_event_handler(call, CALL_EVENT_MENC, "%u,%s", event,
+				   prm);
+	else
+		call_event_handler(call, CALL_EVENT_MENC, "%u", event);
+}
+
+
 static void stream_error_handler(struct stream *strm, int err, void *arg)
 {
 	struct call *call = arg;
@@ -582,8 +596,9 @@ int call_alloc(struct call **callp, const struct config *cfg, struct list *lst,
 	if (acc->menc) {
 		if (acc->menc->sessh) {
 			err = acc->menc->sessh(&call->mencs, call->sdp,
-						!got_offer,
-						menc_error_handler, call);
+					       !got_offer,
+					       menc_event_handler,
+					       menc_error_handler, call);
 			if (err) {
 				warning("call: mediaenc session: %m\n", err);
 				goto out;
@@ -1001,6 +1016,9 @@ int call_status(struct re_printf *pf, const struct call *call)
 	if (call->video)
 		err |= video_print(pf, call->video);
 #endif
+
+	/* remove old junk */
+	err |= re_hprintf(pf, "    ");
 
 	return err;
 }
@@ -1838,6 +1856,13 @@ void call_set_xrtpstat(struct call *call)
 }
 
 
+/**
+ * Check if a call is locally on hold
+ *
+ * @param call Call object
+ *
+ * @return True if on hold (local), otherwise false
+ */
 bool call_is_onhold(const struct call *call)
 {
 	return call ? call->on_hold : false;

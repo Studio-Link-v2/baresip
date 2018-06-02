@@ -13,12 +13,18 @@ extern "C" {
 
 
 /** Defines the Baresip version string */
-#define BARESIP_VERSION "0.5.8"
+#define BARESIP_VERSION "0.5.9"
 
 
 #ifndef NET_MAX_NS
 #define NET_MAX_NS (4)
 #endif
+
+
+/*
+ * Clock-rate for video timestamp
+ */
+#define VIDEO_TIMEBASE 1000000U
 
 
 /* forward declarations */
@@ -48,8 +54,14 @@ struct account;
 
 int account_alloc(struct account **accp, const char *sipaddr);
 int account_debug(struct re_printf *pf, const struct account *acc);
+int account_set_auth_user(struct account *acc, const char *user);
 int account_set_auth_pass(struct account *acc, const char *pass);
+int account_set_outbound(struct account *acc, const char *ob, unsigned ix);
+int account_set_sipnat(struct account *acc, const char *sipnat);
 int account_set_display_name(struct account *acc, const char *dname);
+int account_set_regint(struct account *acc, uint32_t regint);
+int account_set_mediaenc(struct account *acc, const char *mediaenc);
+int account_set_audio_codecs(struct account *acc, const char *codecs);
 int account_auth(const struct account *acc, char **username, char **password,
 		 const char *realm);
 struct list *account_aucodecl(const struct account *acc);
@@ -59,13 +71,16 @@ uint32_t account_regint(const struct account *acc);
 uint32_t account_pubint(const struct account *acc);
 uint32_t account_ptime(const struct account *acc);
 enum answermode account_answermode(const struct account *acc);
+const char *account_display_name(const struct account *acc);
 const char *account_aor(const struct account *acc);
 const char *account_auth_user(const struct account *acc);
 const char *account_auth_pass(const struct account *acc);
 const char *account_outbound(const struct account *acc, unsigned ix);
+const char *account_sipnat(const struct account *acc);
 const char *account_stun_user(const struct account *acc);
 const char *account_stun_pass(const struct account *acc);
 const char *account_stun_host(const struct account *acc);
+const char *account_mediaenc(const struct account *acc);
 
 
 /*
@@ -92,6 +107,13 @@ enum call_event {
 	CALL_EVENT_CLOSED,
 	CALL_EVENT_TRANSFER,
 	CALL_EVENT_TRANSFER_FAILED,
+	CALL_EVENT_MENC,
+};
+
+enum menc_event {
+	MENC_EVENT_SECURE,
+	MENC_EVENT_VERIFY_REQUEST,
+	MENC_EVENT_PEER_VERIFIED,
 };
 
 struct call;
@@ -219,7 +241,7 @@ struct config_video {
 	char disp_dev[128];     /**< Video display device           */
 	unsigned width, height; /**< Video resolution               */
 	uint32_t bitrate;       /**< Encoder bitrate in [bit/s]     */
-	uint32_t fps;           /**< Video framerate                */
+	double fps;             /**< Video framerate                */
 	bool fullscreen;        /**< Enable fullscreen display      */
 	int enc_fmt;            /**< Encoder pixelfmt (enum vidfmt) */
 };
@@ -239,7 +261,7 @@ struct config_avt {
 
 /* Network */
 struct config_net {
-	char ifname[16];        /**< Bind to interface (optional)   */
+	char ifname[64];        /**< Bind to interface (optional)   */
 	struct {
 		char addr[64];
 	} nsv[NET_MAX_NS];      /**< Configured DNS nameservers     */
@@ -510,8 +532,11 @@ struct menc_media;
 
 typedef void (menc_error_h)(int err, void *arg);
 
+typedef void (menc_event_h)(enum menc_event event, const char *prm, void *arg);
+
 typedef int  (menc_sess_h)(struct menc_sess **sessp, struct sdp_session *sdp,
-			   bool offerer, menc_error_h *errorh, void *arg);
+			   bool offerer, menc_event_h *eventh,
+			   menc_error_h *errorh, void *arg);
 
 typedef int  (menc_media_h)(struct menc_media **mp, struct menc_sess *sess,
 			    struct rtp_sock *rtp, int proto,
@@ -592,6 +617,7 @@ enum ua_event {
 	UA_EVENT_CALL_DTMF_START,
 	UA_EVENT_CALL_DTMF_END,
 	UA_EVENT_CALL_RTCP,
+	UA_EVENT_CALL_MENC,
 
 	UA_EVENT_MAX,
 };
@@ -640,6 +666,7 @@ struct list    *ua_calls(const struct ua *ua);
 enum presence_status ua_presence_status(const struct ua *ua);
 void ua_presence_status_set(struct ua *ua, const enum presence_status status);
 void ua_set_media_af(struct ua *ua, int af_media);
+void ua_set_catchall(struct ua *ua, bool enabled);
 
 
 /* One instance */
@@ -760,10 +787,18 @@ struct vidsrc_st;
 /** Video Source parameters */
 struct vidsrc_prm {
 	int orient;       /**< Wanted picture orientation (enum vidorient) */
-	int fps;          /**< Wanted framerate                            */
+	double fps;       /**< Wanted framerate                            */
 };
 
-typedef void (vidsrc_frame_h)(struct vidframe *frame, void *arg);
+/**
+ * Provides video frames to the core
+ *
+ * @param frame     Video frame
+ * @param timestamp Frame timestamp in VIDEO_TIMEBASE units
+ * @param arg       Handler argument
+ */
+typedef void (vidsrc_frame_h)(struct vidframe *frame, uint64_t timestamp,
+			      void *arg);
 typedef void (vidsrc_error_h)(int err, void *arg);
 
 typedef int  (vidsrc_alloc_h)(struct vidsrc_st **vsp, const struct vidsrc *vs,
@@ -776,6 +811,14 @@ typedef int  (vidsrc_alloc_h)(struct vidsrc_st **vsp, const struct vidsrc *vs,
 typedef void (vidsrc_update_h)(struct vidsrc_st *st, struct vidsrc_prm *prm,
 			       const char *dev);
 
+/** Defines a video source */
+struct vidsrc {
+	struct le         le;
+	const char       *name;
+	vidsrc_alloc_h   *alloch;
+	vidsrc_update_h  *updateh;
+};
+
 int vidsrc_register(struct vidsrc **vp, struct list *vidsrcl, const char *name,
 		    vidsrc_alloc_h *alloch, vidsrc_update_h *updateh);
 const struct vidsrc *vidsrc_find(const struct list *vidsrcl, const char *name);
@@ -784,6 +827,7 @@ int vidsrc_alloc(struct vidsrc_st **stp, struct list *vidsrcl,
 		 struct media_ctx **ctx, struct vidsrc_prm *prm,
 		 const struct vidsz *size, const char *fmt, const char *dev,
 		 vidsrc_frame_h *frameh, vidsrc_error_h *errorh, void *arg);
+struct vidsrc *vidsrc_get(struct vidsrc_st *st);
 
 
 /*
@@ -811,6 +855,16 @@ typedef int  (vidisp_disp_h)(struct vidisp_st *st, const char *title,
 			     const struct vidframe *frame);
 typedef void (vidisp_hide_h)(struct vidisp_st *st);
 
+/** Defines a Video display */
+struct vidisp {
+	struct le        le;
+	const char      *name;
+	vidisp_alloc_h  *alloch;
+	vidisp_update_h *updateh;
+	vidisp_disp_h   *disph;
+	vidisp_hide_h   *hideh;
+};
+
 int vidisp_register(struct vidisp **vp, struct list *vidispl, const char *name,
 		    vidisp_alloc_h *alloch, vidisp_update_h *updateh,
 		    vidisp_disp_h *disph, vidisp_hide_h *hideh);
@@ -821,6 +875,7 @@ int vidisp_alloc(struct vidisp_st **stp, struct list *vidispl,
 int vidisp_display(struct vidisp_st *st, const char *title,
 		   const struct vidframe *frame);
 const struct vidisp *vidisp_find(const struct list *vidispl, const char *name);
+struct vidisp *vidisp_get(struct vidisp_st *st);
 
 
 /*
@@ -884,7 +939,7 @@ const struct aucodec *aucodec_find(const struct list *aucodecl,
 struct videnc_param {
 	unsigned bitrate;  /**< Encoder bitrate in [bit/s] */
 	unsigned pktsize;  /**< RTP packetsize in [bytes]  */
-	unsigned fps;      /**< Video framerate            */
+	double fps;        /**< Video framerate (max)      */
 	uint32_t max_fs;
 };
 
@@ -892,7 +947,7 @@ struct videnc_state;
 struct viddec_state;
 struct vidcodec;
 
-typedef int (videnc_packet_h)(bool marker, uint32_t rtp_ts,
+typedef int (videnc_packet_h)(bool marker, uint64_t rtp_ts,
 			      const uint8_t *hdr, size_t hdr_len,
 			      const uint8_t *pld, size_t pld_len,
 			      void *arg);
@@ -901,8 +956,10 @@ typedef int (videnc_update_h)(struct videnc_state **vesp,
 			      const struct vidcodec *vc,
 			      struct videnc_param *prm, const char *fmtp,
 			      videnc_packet_h *pkth, void *arg);
+
 typedef int (videnc_encode_h)(struct videnc_state *ves, bool update,
-			      const struct vidframe *frame);
+			      const struct vidframe *frame,
+			      uint64_t timestamp);
 
 typedef int (viddec_update_h)(struct viddec_state **vdsp,
 			      const struct vidcodec *vc, const char *fmtp);
@@ -994,6 +1051,7 @@ int  audio_level_get(const struct audio *au, double *level);
 int  audio_debug(struct re_printf *pf, const struct audio *a);
 struct stream *audio_strm(const struct audio *a);
 int audio_set_bitrate(struct audio *au, uint32_t bitrate);
+bool audio_rxaubuf_started(struct audio *au);
 
 
 /*
@@ -1011,9 +1069,11 @@ int   video_set_source(struct video *v, const char *name, const char *dev);
 void  video_set_devicename(struct video *v, const char *src, const char *disp);
 void  video_encoder_cycle(struct video *video);
 int   video_debug(struct re_printf *pf, const struct video *v);
-uint32_t video_calc_rtp_timestamp(int64_t pts, unsigned fps);
-double video_calc_seconds(uint32_t rtp_ts);
+uint64_t video_calc_rtp_timestamp(int64_t pts, double fps);
+uint64_t video_calc_rtp_timestamp_fix(uint64_t timestamp);
+double video_calc_seconds(uint64_t rtp_ts);
 struct stream *video_strm(const struct video *v);
+double video_timestamp_to_seconds(uint64_t timestamp);
 
 
 /*
@@ -1143,12 +1203,13 @@ int h264_fu_hdr_decode(struct h264_fu *fu, struct mbuf *mb);
 
 const uint8_t *h264_find_startcode(const uint8_t *p, const uint8_t *end);
 
-int h264_packetize(uint32_t rtp_ts, const uint8_t *buf, size_t len,
+int h264_packetize(uint64_t rtp_ts, const uint8_t *buf, size_t len,
 		   size_t pktsize, videnc_packet_h *pkth, void *arg);
 int h264_nal_send(bool first, bool last,
-		  bool marker, uint32_t ihdr, uint32_t rtp_ts,
+		  bool marker, uint32_t ihdr, uint64_t rtp_ts,
 		  const uint8_t *buf, size_t size, size_t maxsz,
 		  videnc_packet_h *pkth, void *arg);
+const char *h264_nalunit_name(int type);
 static inline bool h264_is_keyframe(int type)
 {
 	return type == H264_NAL_SPS;
@@ -1185,6 +1246,13 @@ double mos_calculate(double *r_factor, double rtt,
 
 int event_encode_dict(struct odict *od, struct ua *ua, enum ua_event ev,
 		      struct call *call, const char *prm);
+
+
+/*
+ * Timer
+ */
+
+uint64_t tmr_jiffies_usec(void);
 
 
 /*

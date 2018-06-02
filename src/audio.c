@@ -97,7 +97,7 @@ struct autx {
 	bool muted;                   /**< Audio source is muted           */
 	int cur_key;                  /**< Currently transmitted event     */
 	enum aufmt src_fmt;           /**< Sample format for audio source  */
-	enum aufmt enc_fmt;
+	enum aufmt enc_fmt;           /**< Sample format for encoder       */
 	bool need_conv;               /**< Sample format conversion needed */
 
 	struct {
@@ -149,14 +149,14 @@ struct aurx {
 	double level_last;
 	bool level_set;
 	enum aufmt play_fmt;          /**< Sample format for audio playback*/
-	enum aufmt dec_fmt;
+	enum aufmt dec_fmt;           /**< Sample format for decoder       */
 	bool need_conv;               /**< Sample format conversion needed */
 	struct timestamp_recv ts_recv;/**< Receive timestamp state         */
-	uint64_t n_discard;
 
 	struct {
 		uint64_t aubuf_overrun;
 		uint64_t aubuf_underrun;
+		uint64_t n_discard;
 	} stats;
 };
 
@@ -648,8 +648,10 @@ static void auplay_write_handler(void *sampv, size_t sampc, void *arg)
 
 		++rx->stats.aubuf_underrun;
 
+#if 0
 		debug("audio: rx aubuf underrun (total %llu)\n",
 		      rx->stats.aubuf_underrun);
+#endif
 	}
 
 	aubuf_read(rx->aubuf, sampv, num_bytes);
@@ -994,7 +996,7 @@ static void stream_recv_handler(const struct rtp_header *hdr,
 #endif
 
 	if (discard) {
-		++a->rx.n_discard;
+		++rx->stats.n_discard;
 		return;
 	}
 
@@ -1088,7 +1090,6 @@ int audio_alloc(struct audio **ap, const struct stream_param *stream_prm,
 	struct aurx *rx;
 	struct le *le;
 	int err;
-	(void)offerer;
 
 	if (!ap || !cfg)
 		return EINVAL;
@@ -1535,6 +1536,10 @@ static int start_source(struct autx *tx, struct audio *a)
 		}
 
 		switch (a->cfg.txmode) {
+
+		case AUDIO_MODE_POLL:
+			break;
+
 #ifdef HAVE_PTHREAD
 		case AUDIO_MODE_THREAD:
 			if (!tx->u.thr.run) {
@@ -1550,7 +1555,9 @@ static int start_source(struct autx *tx, struct audio *a)
 #endif
 
 		default:
-			break;
+			warning("audio: tx mode not supported (%d)\n",
+				a->cfg.txmode);
+			return ENOTSUP;
 		}
 
 		tx->ausrc_prm = prm;
@@ -1986,7 +1993,7 @@ int audio_debug(struct re_printf *pf, const struct audio *a)
 			  );
 	err |= re_hprintf(pf, "       player: %s\n", aufmt_name(rx->play_fmt));
 	err |= re_hprintf(pf, "       n_discard:%llu\n",
-			  rx->n_discard);
+			  rx->stats.n_discard);
 	if (rx->level_set) {
 		err |= re_hprintf(pf, "       level %.3f dBov\n",
 				  rx->level_last);
@@ -2177,4 +2184,17 @@ int audio_set_bitrate(struct audio *au, uint32_t bitrate)
 	}
 
 	return 0;
+}
+
+
+bool audio_rxaubuf_started(struct audio *au)
+{
+	struct aurx *rx;
+
+	if (!au)
+		return false;
+
+	rx = &au->rx;
+
+	return rx->aubuf_started;
 }

@@ -319,7 +319,7 @@ int config_parse_conf(struct config *cfg, const struct conf *conf)
 		cfg->video.height = size.h;
 	}
 	(void)conf_get_u32(conf, "video_bitrate", &cfg->video.bitrate);
-	(void)conf_get_u32(conf, "video_fps", &cfg->video.fps);
+	(void)conf_get_float(conf, "video_fps", &cfg->video.fps);
 	(void)conf_get_bool(conf, "video_fullscreen", &cfg->video.fullscreen);
 
 	conf_get_vidfmt(conf, "videnc_format", &cfg->video.enc_fmt);
@@ -389,7 +389,7 @@ int config_print(struct re_printf *pf, const struct config *cfg)
 			 "\n"
 			 "# Call\n"
 			 "call_local_timeout\t%u\n"
-			 "call_max_calls\t%u\n"
+			 "call_max_calls\t\t%u\n"
 			 "\n"
 			 "# Audio\n"
 			 "audio_path\t\t%s\n"
@@ -410,7 +410,9 @@ int config_print(struct re_printf *pf, const struct config *cfg)
 			 "video_display\t\t%s,%s\n"
 			 "video_size\t\t\"%ux%u\"\n"
 			 "video_bitrate\t\t%u\n"
-			 "video_fps\t\t%u\n"
+			 "video_fps\t\t%.2f\n"
+			 "video_fullscreen\t%s\n"
+			 "videnc_format\t\t%s\n"
 			 "\n"
 #endif
 			 "# AVT\n"
@@ -453,6 +455,8 @@ int config_print(struct re_printf *pf, const struct config *cfg)
 			 cfg->video.disp_mod, cfg->video.disp_dev,
 			 cfg->video.width, cfg->video.height,
 			 cfg->video.bitrate, cfg->video.fps,
+			 cfg->video.fullscreen ? "yes" : "no",
+			 vidfmt_name(cfg->video.enc_fmt),
 #endif
 
 			 cfg->avt.rtp_tos,
@@ -504,6 +508,8 @@ static const char *default_video_device(void)
 	return "avcapture,nil";
 #endif
 
+#elif defined (WIN32)
+	return "dshow,nil";
 #else
 	return "v4l2,/dev/video0";
 #endif
@@ -514,6 +520,8 @@ static const char *default_video_display(void)
 {
 #ifdef DARWIN
 	return "opengl,nil";
+#elif defined (WIN32)
+	return "sdl2,nil";
 #else
 	return "x11,nil";
 #endif
@@ -557,7 +565,7 @@ static int core_config_template(struct re_printf *pf, const struct config *cfg)
 			  "\n"
 			  "# Call\n"
 			  "call_local_timeout\t%u\n"
-			  "call_max_calls\t%u\n"
+			  "call_max_calls\t\t%u\n"
 			  "\n"
 			  "# Audio\n"
 #if defined (SHARE_PATH)
@@ -600,7 +608,7 @@ static int core_config_template(struct re_printf *pf, const struct config *cfg)
 			  "#video_display\t\t%s\n"
 			  "video_size\t\t%dx%d\n"
 			  "video_bitrate\t\t%u\n"
-			  "video_fps\t\t%u\n"
+			  "video_fps\t\t%.2f\n"
 			  "video_fullscreen\tyes\n"
 			  "videnc_format\t\t%s\n"
 			  ,
@@ -766,7 +774,6 @@ int config_write_template(const char *file, const struct config *cfg)
 	(void)re_fprintf(f, "module\t\t\t" MOD_PRE "g711" MOD_EXT "\n");
 	(void)re_fprintf(f, "#module\t\t\t" MOD_PRE "gsm" MOD_EXT "\n");
 	(void)re_fprintf(f, "#module\t\t\t" MOD_PRE "l16" MOD_EXT "\n");
-	(void)re_fprintf(f, "#module\t\t\t" MOD_PRE "speex" MOD_EXT "\n");
 	(void)re_fprintf(f, "#module\t\t\t" MOD_PRE "bv32" MOD_EXT "\n");
 	(void)re_fprintf(f, "#module\t\t\t" MOD_PRE "mpa" MOD_EXT "\n");
 	(void)re_fprintf(f, "#module\t\t\t" MOD_PRE "codec2" MOD_EXT "\n");
@@ -886,13 +893,14 @@ int config_write_template(const char *file, const struct config *cfg)
 	(void)re_fprintf(f, "# Application Modules\n");
 	(void)re_fprintf(f, "\n");
 	(void)re_fprintf(f, "module_app\t\t" MOD_PRE "auloop"MOD_EXT"\n");
+	(void)re_fprintf(f, "#module_app\t\t" MOD_PRE "b2bua"MOD_EXT"\n");
 	(void)re_fprintf(f, "module_app\t\t"  MOD_PRE "contact"MOD_EXT"\n");
 	(void)re_fprintf(f, "module_app\t\t"  MOD_PRE "debug_cmd"MOD_EXT"\n");
 #ifdef LINUX
 	(void)re_fprintf(f, "#module_app\t\t"  MOD_PRE "dtmfio"MOD_EXT"\n");
 #endif
 	(void)re_fprintf(f, "#module_app\t\t"  MOD_PRE "echo"MOD_EXT"\n");
-	(void)re_fprintf(f, "#module_app\t\t\t" MOD_PRE "gtk" MOD_EXT "\n");
+	(void)re_fprintf(f, "#module_app\t\t" MOD_PRE "gtk" MOD_EXT "\n");
 	(void)re_fprintf(f, "module_app\t\t"  MOD_PRE "menu"MOD_EXT"\n");
 	(void)re_fprintf(f, "#module_app\t\t"  MOD_PRE "mwi"MOD_EXT"\n");
 	(void)re_fprintf(f, "#module_app\t\t" MOD_PRE "natbd"MOD_EXT"\n");
@@ -922,16 +930,6 @@ int config_write_template(const char *file, const struct config *cfg)
 	(void)re_fprintf(f, "\n");
 	(void)re_fprintf(f, "evdev_device\t\t/dev/input/event0\n");
 
-	(void)re_fprintf(f, "\n# Speex codec parameters\n");
-	(void)re_fprintf(f, "speex_quality\t\t7 # 0-10\n");
-	(void)re_fprintf(f, "speex_complexity\t7 # 0-10\n");
-	(void)re_fprintf(f, "speex_enhancement\t0 # 0-1\n");
-	(void)re_fprintf(f, "speex_mode_nb\t\t3 # 1-6\n");
-	(void)re_fprintf(f, "speex_mode_wb\t\t6 # 1-6\n");
-	(void)re_fprintf(f, "speex_vbr\t\t0 # Variable Bit Rate 0-1\n");
-	(void)re_fprintf(f, "speex_vad\t\t0 # Voice Activity Detection 0-1\n");
-	(void)re_fprintf(f, "speex_agc_level\t\t8000\n");
-
 	(void)re_fprintf(f, "\n# Opus codec parameters\n");
 	(void)re_fprintf(f, "opus_bitrate\t\t28000 # 6000-510000\n");
 
@@ -954,8 +952,11 @@ int config_write_template(const char *file, const struct config *cfg)
 
 	(void)re_fprintf(f,
 			"\n# Menu\n"
-			"#redial_attempts\t\t3 # Num or <inf>\n"
-			"#redial_delay\t\t5 # Delay in seconds\n");
+			"#menu_bell\t\tyes\n"
+			"#redial_attempts\t3 # Num or <inf>\n"
+			"#redial_delay\t\t5 # Delay in seconds\n"
+			"#ringback_disabled\tyes\n"
+			"#statmode_default\toff\n");
 
 	if (f)
 		(void)fclose(f);
