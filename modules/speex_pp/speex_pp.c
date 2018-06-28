@@ -5,7 +5,6 @@
  */
 #include <string.h>
 #include <stdlib.h>
-#include <speex/speex.h>
 #include <speex/speex_preprocess.h>
 #include <re.h>
 #include <baresip.h>
@@ -52,11 +51,13 @@ static void speexpp_destructor(void *arg)
 
 
 static int encode_update(struct aufilt_enc_st **stp, void **ctx,
-			 const struct aufilt *af, struct aufilt_prm *prm)
+			 const struct aufilt *af, struct aufilt_prm *prm,
+			 const struct audio *au)
 {
 	struct preproc *st;
 	unsigned sampc;
 	(void)ctx;
+	(void)au;
 
 	if (!stp || !af || !prm || prm->ch != 1)
 		return EINVAL;

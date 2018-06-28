@@ -5,7 +5,6 @@
  */
 #include <stdlib.h>
 #include <string.h>
-#include <speex/speex.h>
 #include <speex/speex_echo.h>
 #include <re.h>
 #include <baresip.h>
@@ -52,7 +51,6 @@ static void dec_destructor(void *arg)
 }
 
 
-#ifdef SPEEX_SET_VBR_MAX_BITRATE
 static void speex_aec_destructor(void *arg)
 {
 	struct speex_st *st = arg;
@@ -117,10 +115,12 @@ static int aec_alloc(struct speex_st **stp, void **ctx, struct aufilt_prm *prm)
 
 
 static int encode_update(struct aufilt_enc_st **stp, void **ctx,
-			 const struct aufilt *af, struct aufilt_prm *prm)
+			 const struct aufilt *af, struct aufilt_prm *prm,
+			 const struct audio *au)
 {
 	struct enc_st *st;
 	int err;
+	(void)au;
 
 	if (!stp || !ctx || !af || !prm)
 		return EINVAL;
@@ -144,10 +144,12 @@ static int encode_update(struct aufilt_enc_st **stp, void **ctx,
 
 
 static int decode_update(struct aufilt_dec_st **stp, void **ctx,
-			 const struct aufilt *af, struct aufilt_prm *prm)
+			 const struct aufilt *af, struct aufilt_prm *prm,
+			 const struct audio *au)
 {
 	struct dec_st *st;
 	int err;
+	(void)au;
 
 	if (!stp || !ctx || !af || !prm)
 		return EINVAL;
@@ -194,7 +196,6 @@ static int decode(struct aufilt_dec_st *st, int16_t *sampv, size_t *sampc)
 
 	return 0;
 }
-#endif
 
 
 static struct aufilt speex_aec = {
@@ -204,13 +205,8 @@ static struct aufilt speex_aec = {
 
 static int module_init(void)
 {
-	/* Note: Hack to check libspeex version */
-#ifdef SPEEX_SET_VBR_MAX_BITRATE
 	aufilt_register(baresip_aufiltl(), &speex_aec);
 	return 0;
-#else
-	return ENOSYS;
-#endif
 }
 
 

@@ -82,7 +82,7 @@ struct vtx {
 	struct vidsrc_prm vsrc_prm;        /**< Video source parameters   */
 	struct vidsz vsrc_size;            /**< Video source size         */
 	struct vidsrc_st *vsrc;            /**< Video source              */
-	struct lock *lock;                 /**< Lock for encoder          */
+	struct lock *lock_enc;             /**< Lock for encoder          */
 	struct vidframe *frame;            /**< Source frame              */
 	struct vidframe *mute_frame;       /**< Frame with muted video    */
 	struct lock *lock_tx;              /**< Protect the sendq         */
@@ -306,13 +306,13 @@ static void video_destructor(void *arg)
 
 	tmr_cancel(&vtx->tmr_rtp);
 	mem_deref(vtx->vsrc);
-	lock_write_get(vtx->lock);
+	lock_write_get(vtx->lock_enc);
 	mem_deref(vtx->frame);
 	mem_deref(vtx->mute_frame);
 	mem_deref(vtx->enc);
 	list_flush(&vtx->filtl);
-	lock_rel(vtx->lock);
-	mem_deref(vtx->lock);
+	lock_rel(vtx->lock_enc);
+	mem_deref(vtx->lock_enc);
 
 	/* receive */
 	tmr_cancel(&vrx->tmr_picup);
@@ -402,7 +402,7 @@ static void encode_rtp_send(struct vtx *vtx, struct vidframe *frame,
 		return;
 	}
 
-	lock_write_get(vtx->lock);
+	lock_write_get(vtx->lock_enc);
 
 	/* Convert image */
 	if (frame->fmt != (enum vidfmt)vtx->video->cfg.enc_fmt) {
@@ -415,7 +415,7 @@ static void encode_rtp_send(struct vtx *vtx, struct vidframe *frame,
 					     vtx->video->cfg.enc_fmt,
 					     &vtx->vsrc_size);
 			if (err)
-				goto unlock;
+				goto out;
 		}
 
 		vidconv(vtx->frame, frame, 0);
@@ -431,18 +431,18 @@ static void encode_rtp_send(struct vtx *vtx, struct vidframe *frame,
 			err |= st->vf->ench(st, frame);
 	}
 
- unlock:
-	lock_rel(vtx->lock);
-
 	if (err)
-		return;
+		goto out;
 
 	/* Encode the whole picture frame */
 	err = vtx->vc->ench(vtx->enc, vtx->picup, frame, timestamp);
 	if (err)
-		return;
+		goto out;
 
 	vtx->picup = false;
+
+ out:
+	lock_rel(vtx->lock_enc);
 }
 
 
@@ -493,7 +493,7 @@ static int vtx_alloc(struct vtx *vtx, struct video *video)
 {
 	int err;
 
-	err = lock_alloc(&vtx->lock);
+	err  = lock_alloc(&vtx->lock_enc);
 	err |= lock_alloc(&vtx->lock_tx);
 	if (err)
 		return err;
@@ -1153,6 +1153,8 @@ int video_encoder_set(struct video *v, struct vidcodec *vc,
 		return ENOENT;
 	}
 
+	lock_write_get(vtx->lock_enc);
+
 	if (vc != vtx->vc) {
 
 		struct videnc_param prm;
@@ -1170,13 +1172,16 @@ int video_encoder_set(struct video *v, struct vidcodec *vc,
 				  packet_handler, vtx);
 		if (err) {
 			warning("video: encoder alloc: %m\n", err);
-			return err;
+			goto out;
 		}
 
 		vtx->vc = vc;
 	}
 
 	stream_update_encoder(v->strm, pt_tx);
+
+ out:
+	lock_rel(vtx->lock_enc);
 
 	return err;
 }

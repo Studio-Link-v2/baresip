@@ -557,19 +557,26 @@ int account_set_regint(struct account *acc, uint32_t regint)
  */
 int account_set_mediaenc(struct account *acc, const char *mencid)
 {
+	const struct menc *menc;
 	if (!acc)
 		return EINVAL;
 
-	if (mencid && !menc_find(baresip_mencl(), mencid)) {
-		warning("account: mediaenc not found: `%s'\n",
-			mencid);
-		return EINVAL;
+	if (mencid) {
+		menc = menc_find(baresip_mencl(), mencid);
+		if (!menc) {
+			warning("account: mediaenc not found: `%s'\n",
+				mencid);
+			return EINVAL;
+		}
 	}
 
 	acc->mencid = mem_deref(acc->mencid);
+	acc->menc = NULL;
 
-	if (mencid)
+	if (mencid) {
+		acc->menc = menc;
 		return str_dup(&acc->mencid, mencid);
+	}
 
 	return 0;
 }
@@ -656,6 +663,13 @@ int account_auth(const struct account *acc, char **username, char **password,
 }
 
 
+/**
+ * Get the audio codecs of an account
+ *
+ * @param acc User-Agent account
+ *
+ * @return List of audio codecs (struct aucodec)
+ */
 struct list *account_aucodecl(const struct account *acc)
 {
 	return (acc && !list_isempty(&acc->aucodecl))
@@ -664,6 +678,13 @@ struct list *account_aucodecl(const struct account *acc)
 
 
 #ifdef USE_VIDEO
+/**
+ * Get the video codecs of an account
+ *
+ * @param acc User-Agent account
+ *
+ * @return List of video codecs (struct vidcodec)
+ */
 struct list *account_vidcodecl(const struct account *acc)
 {
 	return (acc && !list_isempty(&acc->vidcodecl))
@@ -672,36 +693,78 @@ struct list *account_vidcodecl(const struct account *acc)
 #endif
 
 
+/**
+ * Get the SIP address of an account
+ *
+ * @param acc User-Agent account
+ *
+ * @return SIP address
+ */
 struct sip_addr *account_laddr(const struct account *acc)
 {
 	return acc ? (struct sip_addr *)&acc->laddr : NULL;
 }
 
 
+/**
+ * Get the Registration interval of an account
+ *
+ * @param acc User-Agent account
+ *
+ * @return Registration interval in [seconds]
+ */
 uint32_t account_regint(const struct account *acc)
 {
 	return acc ? acc->regint : 0;
 }
 
 
+/**
+ * Get the Publication interval of an account
+ *
+ * @param acc User-Agent account
+ *
+ * @return Publication interval in [seconds]
+ */
 uint32_t account_pubint(const struct account *acc)
 {
 	return acc ? acc->pubint : 0;
 }
 
 
+/**
+ * Get the answermode of an account
+ *
+ * @param acc User-Agent account
+ *
+ * @return Answermode
+ */
 enum answermode account_answermode(const struct account *acc)
 {
 	return acc ? acc->answermode : ANSWERMODE_MANUAL;
 }
 
 
+/**
+ * Get the SIP Display Name of an account
+ *
+ * @param acc User-Agent account
+ *
+ * @return SIP Display Name
+ */
 const char *account_display_name(const struct account *acc)
 {
 	return acc ? acc->dispname : NULL;
 }
 
 
+/**
+ * Get the SIP Address-of-Record (AOR) of an account
+ *
+ * @param acc User-Agent account
+ *
+ * @return SIP Address-of-Record (AOR)
+ */
 const char *account_aor(const struct account *acc)
 {
 	return acc ? acc->aor : NULL;

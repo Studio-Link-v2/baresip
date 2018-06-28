@@ -129,7 +129,6 @@ int audio_alloc(struct audio **ap, const struct stream_param *stream_prm,
 		uint32_t ptime, const struct list *aucodecl, bool offerer,
 		audio_event_h *eventh, audio_err_h *errh, void *arg);
 int  audio_start(struct audio *a);
-void audio_stop(struct audio *a);
 int  audio_encoder_set(struct audio *a, const struct aucodec *ac,
 		       int pt_tx, const char *params);
 int  audio_decoder_set(struct audio *a, const struct aucodec *ac,
@@ -414,8 +413,6 @@ void stream_enable_rtp_timeout(struct stream *strm, uint32_t timeout_ms);
 
 struct ua;
 
-void         ua_event(struct ua *ua, enum ua_event ev, struct call *call,
-		      const char *fmt, ...);
 void         ua_printf(const struct ua *ua, const char *fmt, ...);
 
 struct tls  *uag_tls(void);

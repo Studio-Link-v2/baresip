@@ -27,29 +27,72 @@
  */
 
 
-/* a piece from Google WebM's qedit.h:
- *
- *   https://code.google.com/p/webm/source/browse/qedit.h?repo=udpsample
- */
-static const
-IID IID_ISampleGrabber = {
-	0x6b652fff, 0x11fe, 0x4fce,
-	{ 0x92, 0xad, 0x02, 0x66, 0xb5, 0xd7, 0xc7, 0x8f }
+#ifndef __ISampleGrabberCB_INTERFACE_DEFINED__
+#define __ISampleGrabberCB_INTERFACE_DEFINED__
+
+/* interface ISampleGrabberCB */
+/* [unique][helpstring][local][uuid][object] */
+
+EXTERN_C const IID IID_ISampleGrabberCB;
+
+MIDL_INTERFACE("0579154A-2B53-4994-B0D0-E773148EFF85")
+ISampleGrabberCB : public IUnknown
+{
+public:
+	virtual HRESULT STDMETHODCALLTYPE SampleCB(
+		double SampleTime,
+		IMediaSample *pSample) = 0;
+
+	virtual HRESULT STDMETHODCALLTYPE BufferCB(
+		double SampleTime,
+		BYTE *pBuffer,
+		long BufferLen) = 0;
 };
 
-static const
-IID IID_ISampleGrabberCB = {
-	0x0579154a, 0x2b53, 0x4994,
-	{ 0xb0, 0xd0, 0xe7, 0x73, 0x14, 0x8e, 0xff, 0x85 }
+#endif 	/* __ISampleGrabberCB_INTERFACE_DEFINED__ */
+
+
+#ifndef __ISampleGrabber_INTERFACE_DEFINED__
+#define __ISampleGrabber_INTERFACE_DEFINED__
+
+/* interface ISampleGrabber */
+/* [unique][helpstring][local][uuid][object] */
+
+EXTERN_C const IID IID_ISampleGrabber;
+
+MIDL_INTERFACE("6B652FFF-11FE-4fce-92AD-0266B5D7C78F")
+ISampleGrabber : public IUnknown
+{
+public:
+	virtual HRESULT STDMETHODCALLTYPE SetOneShot(
+		BOOL OneShot) = 0;
+
+	virtual HRESULT STDMETHODCALLTYPE SetMediaType(
+		const AM_MEDIA_TYPE *pType) = 0;
+
+	virtual HRESULT STDMETHODCALLTYPE GetConnectedMediaType(
+		AM_MEDIA_TYPE *pType) = 0;
+
+	virtual HRESULT STDMETHODCALLTYPE SetBufferSamples(
+		BOOL BufferThem) = 0;
+
+	virtual HRESULT STDMETHODCALLTYPE GetCurrentBuffer(
+		/* [out][in] */ long *pBufferSize,
+		/* [out] */ long *pBuffer) = 0;
+
+	virtual HRESULT STDMETHODCALLTYPE GetCurrentSample(
+		/* [retval][out] */ IMediaSample **ppSample) = 0;
+
+	virtual HRESULT STDMETHODCALLTYPE SetCallback(
+		ISampleGrabberCB *pCallback,
+		long WhichMethodToCallback) = 0;
 };
 
-#include "qedit.h"
+DEFINE_GUID(CLSID_SampleGrabber, 0xc1f400a0, 0x3f08, 0x11d3,
+	0x9f, 0x0b, 0x00, 0x60, 0x08, 0x03, 0x9e, 0x37);
 
-/*
-const CLSID CLSID_SampleGrabber = { 0xc1f400a0, 0x3f08, 0x11d3,
-  { 0x9f, 0x0b, 0x00, 0x60, 0x08, 0x03, 0x9e, 0x37 }
-};
-*/
+#endif 	/* __ISampleGrabber_INTERFACE_DEFINED__ */
+
 
 class Grabber;
 
@@ -79,7 +122,7 @@ public:
 	STDMETHOD(QueryInterface)(REFIID InterfaceIdentifier,
 				  VOID** ppvObject) throw()
 	{
-		if (InterfaceIdentifier == __uuidof(ISampleGrabberCB)) {
+		if (InterfaceIdentifier == IID_ISampleGrabberCB) {
 			*ppvObject = (ISampleGrabberCB**) this;
 			return S_OK;
 		}
@@ -98,11 +141,24 @@ public:
 
 	STDMETHOD(BufferCB) (double sample_time, BYTE *buf, long buf_len)
 	{
+		int i, j = 0, k;
+		int buf_len_RGB32 = src->size.h*src->size.w;
+		uint32_t tmp_pix_RGB32;
+		uint32_t *buf_RGB32;
 		struct vidframe vidframe;
 		uint64_t timestamp = sample_time * VIDEO_TIMEBASE;
 
-		/* XXX: should be VID_FMT_BGR24 */
 		vidframe_init_buf(&vidframe, VID_FMT_RGB32, &src->size, buf);
+
+		//By default in Dshow, RGB32 image orientation is bottom-up
+		buf_RGB32 = (uint32_t *)buf;
+		for (i = buf_len_RGB32-1 ; i > buf_len_RGB32/2; i-=1) {
+			k = src->size.w*(j/src->size.w) + i%(src->size.w);
+			tmp_pix_RGB32 = buf_RGB32[k];
+			buf_RGB32[k] = buf_RGB32[i];
+			buf_RGB32[i] = tmp_pix_RGB32;
+			++j;
+		}
 
 		if (src->frameh)
 			src->frameh(&vidframe, timestamp, src->arg);
@@ -217,7 +273,7 @@ static int add_sample_grabber(struct vidsrc_st *st)
 
 	memset(&mt, 0, sizeof(mt));
 	mt.majortype = MEDIATYPE_Video;
-	mt.subtype = MEDIASUBTYPE_RGB24;  /* XXX: try YUV420P */
+	mt.subtype = MEDIASUBTYPE_RGB32;  /* XXX: try YUV420P */
 	hr = st->grabber->SetMediaType(&mt);
 	if (FAILED(hr))
 		return ENODEV;

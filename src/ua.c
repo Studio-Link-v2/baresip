@@ -18,7 +18,6 @@
 /** Defines a SIP User Agent object */
 struct ua {
 	MAGIC_DECL                   /**< Magic number for struct ua         */
-	struct ua **uap;             /**< Pointer to application's ua        */
 	struct le le;                /**< Linked list element                */
 	struct account *acc;         /**< Account Parameters                 */
 	struct list regl;            /**< List of Register clients           */
@@ -530,11 +529,6 @@ static void ua_destructor(void *arg)
 {
 	struct ua *ua = arg;
 
-	if (ua->uap) {
-		*ua->uap = NULL;
-		ua->uap = NULL;
-	}
-
 	list_unlink(&ua->le);
 
 	if (!list_isempty(&ua->regl))
@@ -586,6 +580,46 @@ static void add_extension(struct ua *ua, const char *extension)
 	pl_set_str(&e, extension);
 
 	ua->extensionv[ua->extensionc++] = e;
+}
+
+
+static int create_register_clients(struct ua *ua)
+{
+	int err = 0;
+
+	/* Register clients */
+	if (uag.cfg && str_isset(uag.cfg->uuid))
+	        add_extension(ua, "gruu");
+
+	if (0 == str_casecmp(ua->acc->sipnat, "outbound")) {
+
+		size_t i;
+
+		add_extension(ua, "path");
+		add_extension(ua, "outbound");
+
+		if (!str_isset(uag.cfg->uuid)) {
+
+			warning("ua: outbound requires valid UUID!\n");
+			err = ENOSYS;
+			goto out;
+		}
+
+		for (i=0; i<ARRAY_SIZE(ua->acc->outboundv); i++) {
+
+			if (ua->acc->outboundv[i] && ua->acc->regint) {
+				err = reg_add(&ua->regl, ua, (int)i+1);
+				if (err)
+					break;
+			}
+		}
+	}
+	else if (ua->acc->regint) {
+		err = reg_add(&ua->regl, ua, 0);
+	}
+
+ out:
+	return err;
 }
 
 
@@ -655,36 +689,7 @@ int ua_alloc(struct ua **uap, const char *aor)
 			  ua->acc->menc->id);
 	}
 
-	/* Register clients */
-	if (uag.cfg && str_isset(uag.cfg->uuid))
-	        add_extension(ua, "gruu");
-
-	if (0 == str_casecmp(ua->acc->sipnat, "outbound")) {
-
-		size_t i;
-
-		add_extension(ua, "path");
-		add_extension(ua, "outbound");
-
-		if (!str_isset(uag.cfg->uuid)) {
-
-			warning("ua: outbound requires valid UUID!\n");
-			err = ENOSYS;
-			goto out;
-		}
-
-		for (i=0; i<ARRAY_SIZE(ua->acc->outboundv); i++) {
-
-			if (ua->acc->outboundv[i] && ua->acc->regint) {
-				err = reg_add(&ua->regl, ua, (int)i+1);
-				if (err)
-					break;
-			}
-		}
-	}
-	else if (ua->acc->regint) {
-		err = reg_add(&ua->regl, ua, 0);
-	}
+	err = create_register_clients(ua);
 	if (err)
 		goto out;
 
@@ -701,13 +706,23 @@ int ua_alloc(struct ua **uap, const char *aor)
 	mem_deref(buf);
 	if (err)
 		mem_deref(ua);
-	else if (uap) {
+	else if (uap)
 		*uap = ua;
 
-		ua->uap = uap;
-	}
-
 	return err;
+}
+
+
+int ua_update_account(struct ua *ua)
+{
+	if (!ua)
+		return EINVAL;
+
+	/* clear extensions and reg clients */
+	ua->extensionc = 0;
+	list_flush(&ua->regl);
+
+	return create_register_clients(ua);
 }
 
 
@@ -715,6 +730,8 @@ static int uri_complete(struct ua *ua, struct mbuf *buf, const char *uri)
 {
 	size_t len;
 	int err = 0;
+	bool uri_is_ip;
+	struct sa sa_addr;
 
 	/* Skip initial whitespace */
 	while (isspace(*uri))
@@ -728,8 +745,13 @@ static int uri_complete(struct ua *ua, struct mbuf *buf, const char *uri)
 
 	err |= mbuf_write_str(buf, uri);
 
-	/* Append domain if missing */
-	if (0 != re_regex(uri, len, "[^@]+@[^]+", NULL, NULL)) {
+	/* Append domain if missing and uri is not IP address */
+
+	/* check if uri is valid IP address */
+	uri_is_ip = (0 == sa_set_str(&sa_addr, uri, 0));
+
+	if (0 != re_regex(uri, len, "[^@]+@[^]+", NULL, NULL) &&
+		1 != uri_is_ip) {
 #if HAVE_INET6
 		if (AF_INET6 == ua->acc->luri.af)
 			err |= mbuf_printf(buf, "@[%r]",
@@ -1240,6 +1262,10 @@ static void sipsess_conn_handler(const struct sip_msg *msg, void *arg)
 	int err;
 
 	(void)arg;
+
+	debug("ua: sipsess connect via %s %J --> %J\n",
+	      sip_transp_name(msg->tp),
+	      &msg->src, &msg->dst);
 
 	ua = uag_find(&msg->uri.user);
 	if (!ua) {

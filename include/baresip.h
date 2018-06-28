@@ -204,7 +204,7 @@ struct config_sip {
 
 /** Call config */
 struct config_call {
-	uint32_t local_timeout; /**< Incoming call timeout [sec] 0=off */
+	uint32_t local_timeout; /**< Incoming call timeout [sec] 0=off    */
 	uint32_t max_calls;     /**< Maximum number of calls, 0=unlimited */
 };
 
@@ -389,8 +389,8 @@ struct ausrc_st;
 
 /** Audio Source parameters */
 struct ausrc_prm {
-	uint32_t   srate;       /**< Sampling rate in [Hz] */
-	uint8_t    ch;          /**< Number of channels    */
+	uint32_t   srate;       /**< Sampling rate in [Hz]      */
+	uint8_t    ch;          /**< Number of channels         */
 	uint32_t   ptime;       /**< Wanted packet-time in [ms] */
 	int        fmt;         /**< Sample format (enum aufmt) */
 };
@@ -422,8 +422,8 @@ struct auplay_st;
 
 /** Audio Player parameters */
 struct auplay_prm {
-	uint32_t   srate;       /**< Sampling rate in [Hz] */
-	uint8_t    ch;          /**< Number of channels    */
+	uint32_t   srate;       /**< Sampling rate in [Hz]      */
+	uint8_t    ch;          /**< Number of channels         */
 	uint32_t   ptime;       /**< Wanted packet-time in [ms] */
 	int        fmt;         /**< Sample format (enum aufmt) */
 };
@@ -468,12 +468,14 @@ struct aufilt_prm {
 };
 
 typedef int (aufilt_encupd_h)(struct aufilt_enc_st **stp, void **ctx,
-			      const struct aufilt *af, struct aufilt_prm *prm);
+			      const struct aufilt *af, struct aufilt_prm *prm,
+			      const struct audio *au);
 typedef int (aufilt_encode_h)(struct aufilt_enc_st *st,
 			      int16_t *sampv, size_t *sampc);
 
 typedef int (aufilt_decupd_h)(struct aufilt_dec_st **stp, void **ctx,
-			      const struct aufilt *af, struct aufilt_prm *prm);
+			      const struct aufilt *af, struct aufilt_prm *prm,
+			      const struct audio *au);
 typedef int (aufilt_decode_h)(struct aufilt_dec_st *st,
 			      int16_t *sampv, size_t *sampc);
 
@@ -618,6 +620,8 @@ enum ua_event {
 	UA_EVENT_CALL_DTMF_END,
 	UA_EVENT_CALL_RTCP,
 	UA_EVENT_CALL_MENC,
+	UA_EVENT_VU_TX,
+	UA_EVENT_VU_RX,
 
 	UA_EVENT_MAX,
 };
@@ -651,6 +655,7 @@ int  ua_debug(struct re_printf *pf, const struct ua *ua);
 int  ua_print_calls(struct re_printf *pf, const struct ua *ua);
 int  ua_print_status(struct re_printf *pf, const struct ua *ua);
 int  ua_print_supported(struct re_printf *pf, const struct ua *ua);
+int  ua_update_account(struct ua *ua);
 int  ua_register(struct ua *ua);
 void ua_unregister(struct ua *ua);
 bool ua_isregistered(const struct ua *ua);
@@ -667,6 +672,8 @@ enum presence_status ua_presence_status(const struct ua *ua);
 void ua_presence_status_set(struct ua *ua, const enum presence_status status);
 void ua_set_media_af(struct ua *ua, int af_media);
 void ua_set_catchall(struct ua *ua, bool enabled);
+void ua_event(struct ua *ua, enum ua_event ev, struct call *call,
+	      const char *fmt, ...);
 
 
 /* One instance */
@@ -698,8 +705,8 @@ struct sipevent_sock *uag_sipevent_sock(void);
  */
 
 struct ui_sub {
-	struct list uil;  /**< List of UIs (struct ui) */
-	struct cmd_ctx *uictx;
+	struct list uil;        /**< List of UIs (struct ui) */
+	struct cmd_ctx *uictx;  /**< Command context         */
 };
 
 typedef int  (ui_output_h)(const char *str);
@@ -718,6 +725,7 @@ void ui_reset(struct ui_sub *uis);
 void ui_input_key(struct ui_sub *uis, char key, struct re_printf *pf);
 void ui_input_str(const char *str);
 int  ui_input_pl(struct re_printf *pf, const struct pl *pl);
+int  ui_input_long_command(struct re_printf *pf, const struct pl *pl);
 void ui_output(struct ui_sub *uis, const char *fmt, ...);
 bool ui_isediting(const struct ui_sub *uis);
 int  ui_password_prompt(char **passwordp);
@@ -728,9 +736,9 @@ int  ui_password_prompt(char **passwordp);
  */
 
 /* special keys */
-#define KEYCODE_NONE   (0x00)
+#define KEYCODE_NONE   (0x00)    /* No key           */
 #define KEYCODE_REL    (0x04)    /* Key was released */
-#define KEYCODE_ESC    (0x1b)
+#define KEYCODE_ESC    (0x1b)    /* Escape key       */
 
 
 /** Command flags */
@@ -884,8 +892,8 @@ struct vidisp *vidisp_get(struct vidisp_st *st);
 
 /** Audio Codec parameters */
 struct auenc_param {
-	uint32_t ptime;  /**< Packet time in [ms]   */
-	uint32_t bitrate;/**< Wanted bitrate in [bit/s] */
+	uint32_t ptime;    /**< Packet time in [ms]       */
+	uint32_t bitrate;  /**< Wanted bitrate in [bit/s] */
 };
 
 struct auenc_state;
@@ -1049,9 +1057,11 @@ int  audio_set_player(struct audio *au, const char *mod, const char *device);
 void audio_encoder_cycle(struct audio *audio);
 int  audio_level_get(const struct audio *au, double *level);
 int  audio_debug(struct re_printf *pf, const struct audio *a);
-struct stream *audio_strm(const struct audio *a);
-int audio_set_bitrate(struct audio *au, uint32_t bitrate);
-bool audio_rxaubuf_started(struct audio *au);
+struct stream *audio_strm(const struct audio *au);
+int  audio_set_bitrate(struct audio *au, uint32_t bitrate);
+bool audio_rxaubuf_started(const struct audio *au);
+void audio_stop(struct audio *a);
+void audio_set_hold(struct audio *au, bool hold);
 
 
 /*
@@ -1081,6 +1091,7 @@ double video_timestamp_to_seconds(uint64_t timestamp);
  */
 
 const struct rtcp_stats *stream_rtcp_stats(const struct stream *strm);
+struct call *stream_call(const struct stream *strm);
 
 
 /*

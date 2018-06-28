@@ -338,6 +338,8 @@ static int stream_sock_alloc(struct stream *s, int af)
 
 	udp_rxsz_set(rtp_sock(s->rtp), RTP_RECV_SIZE);
 
+	udp_sockbuf_set(rtp_sock(s->rtp), 65536);
+
 	return 0;
 }
 
@@ -740,4 +742,17 @@ int stream_print(struct re_printf *pf, const struct stream *s)
 const struct rtcp_stats *stream_rtcp_stats(const struct stream *strm)
 {
 	return strm ? &strm->rtcp_stats : NULL;
+}
+
+
+/**
+ * Get the call object from the stream
+ *
+ * @param strm Stream object
+ *
+ * @return Call object
+ */
+struct call *stream_call(const struct stream *strm)
+{
+	return strm ? strm->call : NULL;
 }

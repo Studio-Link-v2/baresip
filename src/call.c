@@ -115,6 +115,8 @@ static void call_stream_start(struct call *call, bool active)
 	const struct sdp_format *sc;
 	int err;
 
+	debug("call: stream start (active=%d)\n", active);
+
 	/* Audio Stream */
 	sc = sdp_media_rformat(stream_sdpmedia(audio_strm(call->audio)), NULL);
 	if (sc) {
@@ -736,6 +738,8 @@ int call_modify(struct call *call)
 	if (!call)
 		return EINVAL;
 
+	debug("call: modify\n");
+
 	err = call_sdp_get(call, &desc, true);
 	if (!err)
 		err = sipsess_modify(call->sess, desc);
@@ -1127,6 +1131,8 @@ static int sipsess_answer_handler(const struct sip_msg *msg, void *arg)
 
 	MAGIC_CHECK(call);
 
+	debug("call: got SDP answer (%zu bytes)\n", mbuf_get_left(msg->mb));
+
 	if (msg_ctype_cmp(&msg->ctyp, "multipart", "mixed"))
 		(void)sdp_decode_multipart(&msg->ctyp.params, msg->mb);
 
@@ -1186,13 +1192,13 @@ static void call_handle_info_req(struct call *call, const struct sip_msg *req)
 	bool pfu;
 	int err;
 
-	(void)call;
-
 	pl_set_mbuf(&body, req->mb);
 
 	err = mctrl_handle_media_control(&body, &pfu);
 	if (err)
 		return;
+
+	debug("call: receive media control: fast_update=%d\n", pfu);
 
 	if (pfu) {
 		video_update_picture(call->video);
