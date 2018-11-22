@@ -64,9 +64,14 @@ struct video_loop {
 	struct list filtdecl;
 	struct vstat stat;
 	struct tmr tmr_bw;
+	struct tmr tmr_display;
 	struct vidsz src_size;
 	struct vidsz disp_size;
 	enum vidfmt src_fmt;
+	struct vidframe *frame;
+	uint64_t frame_timestamp;
+	struct lock *frame_mutex;
+	bool new_frame;
 	uint64_t ts_start;      /* usec */
 	uint64_t ts_last;       /* usec */
 	uint16_t seq;
@@ -123,7 +128,35 @@ static double timestamp_state_duration(const struct timestamp_state *ts,
 }
 
 
-static int display(struct video_loop *vl, struct vidframe *frame)
+static void display_handler(void *arg)
+{
+	struct video_loop *vl = arg;
+	int err;
+
+	tmr_start(&vl->tmr_display, 10, display_handler, vl);
+
+	lock_write_get(vl->frame_mutex);
+
+	if (!vl->new_frame)
+		goto out;
+
+	/* display frame */
+	err = vidisp_display(vl->vidisp, "Video Loop",
+			     vl->frame, vl->frame_timestamp);
+	vl->new_frame = false;
+
+	if (err == ENODEV) {
+		info("vidloop: video-display was closed\n");
+		vl->vidisp = mem_deref(vl->vidisp);
+	}
+
+ out:
+	lock_rel(vl->frame_mutex);
+}
+
+
+static int display(struct video_loop *vl, struct vidframe *frame,
+		   uint64_t timestamp)
 {
 	struct vidframe *frame_filt = NULL;
 	struct le *le;
@@ -153,27 +186,40 @@ static int display(struct video_loop *vl, struct vidframe *frame)
 		}
 
 		if (st->vf->dech)
-			err |= st->vf->dech(st, frame);
+			err |= st->vf->dech(st, frame, &timestamp);
 	}
 
 	if (err) {
-		warning("vidloop: error in video-filters (%m)\n", err);
+		warning("vidloop: error in decode video-filter (%m)\n", err);
 	}
 
 	/* save the displayed frame info */
 	vl->disp_size = frame->size;
 	++vl->stats.disp_frames;
 
-	/* display frame */
-	err = vidisp_display(vl->vidisp, "Video Loop", frame);
-	if (err == ENODEV) {
-		info("vidloop: video-display was closed\n");
-		vl->vidisp = mem_deref(vl->vidisp);
-		vl->err = err;
-		goto out;
+	lock_write_get(vl->frame_mutex);
+
+	if (vl->frame && ! vidsz_cmp(&vl->frame->size, &frame->size)) {
+
+		info("vidloop: resolution changed:  %u x %u\n",
+		     frame->size.w, frame->size.h);
+
+		vl->frame = mem_deref(vl->frame);
 	}
 
+	if (!vl->frame) {
+		err = vidframe_alloc(&vl->frame, frame->fmt, &frame->size);
+		if (err)
+			goto out;
+	}
+
+	vidframe_copy(vl->frame, frame);
+	vl->frame_timestamp = timestamp;
+	vl->new_frame = true;
+
  out:
+	lock_rel(vl->frame_mutex);
+
 	mem_deref(frame_filt);
 
 	return err;
@@ -188,6 +234,7 @@ static int packet_handler(bool marker, uint64_t rtp_ts,
 	struct video_loop *vl = arg;
 	struct vidframe frame;
 	struct mbuf *mb;
+	uint64_t timestamp;
 	bool intra;
 	int err = 0;
 
@@ -222,9 +269,12 @@ static int packet_handler(bool marker, uint64_t rtp_ts,
 			++vl->stat.n_intra;
 	}
 
+	/* convert the RTP timestamp to VIDEO_TIMEBASE timestamp */
+	timestamp = video_calc_timebase_timestamp(rtp_ts);
+
 	if (vidframe_isvalid(&frame)) {
 
-		display(vl, &frame);
+		display(vl, &frame, timestamp);
 	}
 
  out:
@@ -281,7 +331,7 @@ static void vidsrc_frame_handler(struct vidframe *frame, uint64_t timestamp,
 		struct vidfilt_enc_st *st = le->data;
 
 		if (st->vf->ench)
-			err |= st->vf->ench(st, frame);
+			err |= st->vf->ench(st, frame, &timestamp);
 	}
 
 	if (vl->vc_enc && vl->enc) {
@@ -294,7 +344,7 @@ static void vidsrc_frame_handler(struct vidframe *frame, uint64_t timestamp,
 	}
 	else {
 		vl->stat.bytes += vidframe_size(frame->fmt, &frame->size);
-		(void)display(vl, frame);
+		(void)display(vl, frame, timestamp);
 	}
 
  out:
@@ -436,9 +486,16 @@ static void vidloop_destructor(void *arg)
 	mem_deref(vl->vsrc);
 	mem_deref(vl->enc);
 	mem_deref(vl->dec);
+
+	lock_write_get(vl->frame_mutex);
 	mem_deref(vl->vidisp);
+	mem_deref(vl->frame);
+	tmr_cancel(&vl->tmr_display);
+	lock_rel(vl->frame_mutex);
+
 	list_flush(&vl->filtencl);
 	list_flush(&vl->filtdecl);
+	mem_deref(vl->frame_mutex);
 }
 
 
@@ -587,6 +644,14 @@ static int video_loop_alloc(struct video_loop **vlp)
 
 	vl->cfg = cfg->video;
 	tmr_init(&vl->tmr_bw);
+	tmr_init(&vl->tmr_display);
+
+	err = lock_alloc(&vl->frame_mutex);
+	if (err)
+		goto out;
+
+	vl->new_frame = false;
+	vl->frame = NULL;
 
 	/* Video filters */
 	for (le = list_head(baresip_vidfiltl()); le; le = le->next) {
@@ -614,6 +679,10 @@ static int video_loop_alloc(struct video_loop **vlp)
 	}
 
 	tmr_start(&vl->tmr_bw, 1000, timeout_bw, vl);
+
+	/* NOTE: usually (e.g. SDL2),
+			 video frame must be rendered from main thread */
+	tmr_start(&vl->tmr_display, 10, display_handler, vl);
 
  out:
 	if (err)

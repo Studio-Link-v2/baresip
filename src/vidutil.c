@@ -11,30 +11,6 @@
 
 
 /**
- * Calculate the RTP timestamp from Presentation Time Stamp (PTS)
- * or Decoding Time Stamp (DTS) and framerate.
- *
- * @note The calculated RTP Timestamp may NOT wrap around.
- *
- * @param pts Presentation Time Stamp (PTS)
- * @param fps Framerate in [frames per second]
- *
- * @return Extended RTP Timestamp
- */
-uint64_t video_calc_rtp_timestamp(int64_t pts, double fps)
-{
-	uint64_t rtp_ts;
-
-	if (!fps)
-		return 0;
-
-	rtp_ts = ((uint64_t)VIDEO_SRATE * pts) / fps;
-
-	return rtp_ts;
-}
-
-
-/**
  * Calculate the timestamp in seconds from the RTP timestamp.
  *
  * @param rtp_ts RTP Timestamp
@@ -79,4 +55,17 @@ uint64_t video_calc_rtp_timestamp_fix(uint64_t timestamp)
 	rtp_ts = timestamp * VIDEO_SRATE / VIDEO_TIMEBASE;
 
 	return rtp_ts;
+}
+
+
+/**
+ * Calculate timestamp in VIDEO_TIMEBASE units from RTP timestamp
+ *
+ * @param rtp_ts Extended RTP timestamp
+ *
+ * @return Timestamp in VIDEO_TIMEBASE units
+ */
+uint64_t video_calc_timebase_timestamp(uint64_t rtp_ts)
+{
+	return rtp_ts * VIDEO_TIMEBASE / VIDEO_SRATE;
 }

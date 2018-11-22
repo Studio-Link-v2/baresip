@@ -32,6 +32,7 @@ static struct config core_config = {
 		16,
 		"",
 		"",
+		"",
 		""
 	},
 
@@ -47,8 +48,6 @@ static struct config core_config = {
 		"","",
 		"","",
 		"","",
-		{8000, 48000},
-		{1, 2},
 		0,
 		0,
 		0,
@@ -251,6 +250,8 @@ int config_parse_conf(struct config *cfg, const struct conf *conf)
 			   sizeof(cfg->sip.local));
 	(void)conf_get_str(conf, "sip_certificate", cfg->sip.cert,
 			   sizeof(cfg->sip.cert));
+	(void)conf_get_str(conf, "sip_cafile", cfg->sip.cafile,
+			   sizeof(cfg->sip.cafile));
 
 	/* Call */
 	(void)conf_get_u32(conf, "call_local_timeout",
@@ -277,8 +278,6 @@ int config_parse_conf(struct config *cfg, const struct conf *conf)
 			   cfg->audio.alert_dev,
 			   sizeof(cfg->audio.alert_dev));
 
-	(void)conf_get_range(conf, "audio_srate", &cfg->audio.srate);
-	(void)conf_get_range(conf, "audio_channels", &cfg->audio.channels);
 	(void)conf_get_u32(conf, "ausrc_srate", &cfg->audio.srate_src);
 	(void)conf_get_u32(conf, "auplay_srate", &cfg->audio.srate_play);
 	(void)conf_get_u32(conf, "ausrc_channels", &cfg->audio.channels_src);
@@ -396,8 +395,6 @@ int config_print(struct re_printf *pf, const struct config *cfg)
 			 "audio_player\t\t%s,%s\n"
 			 "audio_source\t\t%s,%s\n"
 			 "audio_alert\t\t%s,%s\n"
-			 "audio_srate\t\t%H\n"
-			 "audio_channels\t\t%H\n"
 			 "auplay_srate\t\t%u\n"
 			 "ausrc_srate\t\t%u\n"
 			 "auplay_channels\t\t%u\n"
@@ -444,8 +441,6 @@ int config_print(struct re_printf *pf, const struct config *cfg)
 			 cfg->audio.play_mod,  cfg->audio.play_dev,
 			 cfg->audio.src_mod,   cfg->audio.src_dev,
 			 cfg->audio.alert_mod, cfg->audio.alert_dev,
-			 range_print, &cfg->audio.srate,
-			 range_print, &cfg->audio.channels,
 			 cfg->audio.srate_play, cfg->audio.srate_src,
 			 cfg->audio.channels_play, cfg->audio.channels_src,
 			 cfg->audio.level ? "yes" : "no",
@@ -484,7 +479,7 @@ static const char *default_audio_device(void)
 #if defined (ANDROID)
 	return "opensles,nil";
 #elif defined (DARWIN)
-	return "coreaudio,nil";
+	return "coreaudio,default";
 #elif defined (FREEBSD)
 	return "oss,/dev/dsp";
 #elif defined (OPENBSD)
@@ -578,8 +573,6 @@ static int core_config_template(struct re_printf *pf, const struct config *cfg)
 			  "audio_player\t\t%s\n"
 			  "audio_source\t\t%s\n"
 			  "audio_alert\t\t%s\n"
-			  "audio_srate\t\t%u-%u\n"
-			  "audio_channels\t\t%u-%u\n"
 			  "#ausrc_srate\t\t48000\n"
 			  "#auplay_srate\t\t48000\n"
 			  "#ausrc_channels\t\t0\n"
@@ -596,10 +589,7 @@ static int core_config_template(struct re_printf *pf, const struct config *cfg)
 			  cfg->call.max_calls,
 			  default_audio_device(),
 			  default_audio_device(),
-			  default_audio_device(),
-			  cfg->audio.srate.min, cfg->audio.srate.max,
-			  cfg->audio.channels.min, cfg->audio.channels.max
-			  );
+			  default_audio_device());
 
 #ifdef USE_VIDEO
 	err |= re_hprintf(pf,
@@ -932,6 +922,12 @@ int config_write_template(const char *file, const struct config *cfg)
 
 	(void)re_fprintf(f, "\n# Opus codec parameters\n");
 	(void)re_fprintf(f, "opus_bitrate\t\t28000 # 6000-510000\n");
+	(void)re_fprintf(f, "#opus_stereo\t\tyes\n");
+	(void)re_fprintf(f, "#opus_sprop_stereo\tyes\n");
+	(void)re_fprintf(f, "#opus_cbr\t\tno\n");
+	(void)re_fprintf(f, "#opus_inband_fec\tno\n");
+	(void)re_fprintf(f, "#opus_dtx\t\tno\n");
+	(void)re_fprintf(f, "#opus_mirror\t\tno\n");
 
 	(void)re_fprintf(f,
 			"\n# Selfview\n"

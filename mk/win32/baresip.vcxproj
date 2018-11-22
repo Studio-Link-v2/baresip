@@ -175,10 +175,12 @@
     <ClCompile Include="..\..\src\conf.c" />
     <ClCompile Include="..\..\src\config.c" />
     <ClCompile Include="..\..\src\contact.c" />
+    <ClCompile Include="..\..\src\custom_hdrs.c" />
     <ClCompile Include="..\..\src\h264.c" />
     <ClCompile Include="..\..\src\log.c" />
     <ClCompile Include="..\..\src\main.c" />
     <ClCompile Include="..\..\src\mctrl.c" />
+    <ClCompile Include="..\..\src\mediadev.c" />
     <ClCompile Include="..\..\src\menc.c" />
     <ClCompile Include="..\..\src\message.c" />
     <ClCompile Include="..\..\src\metric.c" />
@@ -189,7 +191,6 @@
     <ClCompile Include="..\..\src\play.c" />
     <ClCompile Include="..\..\src\realtime.c" />
     <ClCompile Include="..\..\src\reg.c" />
-    <ClCompile Include="..\..\src\rtpkeep.c" />
     <ClCompile Include="..\..\src\sdp.c" />
     <ClCompile Include="..\..\src\sipreq.c" />
     <ClCompile Include="..\..\src\stream.c" />

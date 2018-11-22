@@ -82,6 +82,7 @@ struct call {
 
 	uint32_t rtp_timeout_ms;  /**< RTP Timeout in [ms]                  */
 	uint32_t linenum;         /**< Line number from 1 to N              */
+	struct list custom_hdrs;  /**< List of custom headers if any        */
 };
 
 
@@ -242,7 +243,7 @@ static void invite_timeout(void *arg)
 }
 
 
-/** Called when all media streams are established */
+/* Called when all media streams are established */
 static void mnat_handler(int err, uint16_t scode, const char *reason,
 			 void *arg)
 {
@@ -397,6 +398,8 @@ static void call_destructor(void *arg)
 	mem_deref(call->sub);
 	mem_deref(call->not);
 	mem_deref(call->acc);
+
+	list_flush(&call->custom_hdrs);
 }
 
 
@@ -421,8 +424,7 @@ static void audio_error_handler(int err, const char *str, void *arg)
 		warning("call: audio device error: %m (%s)\n", err, str);
 	}
 
-	call_stream_stop(call);
-	call_event_handler(call, CALL_EVENT_CLOSED, str);
+	ua_event(call->ua, UA_EVENT_AUDIO_ERROR, call, "%d,%s", err, str);
 }
 
 
@@ -688,6 +690,50 @@ int call_alloc(struct call **callp, const struct config *cfg, struct list *lst,
 }
 
 
+void call_set_custom_hdrs(struct call *call, const struct list *hdrs)
+{
+	struct le *le;
+
+	if (!call)
+		return;
+
+	list_flush(&call->custom_hdrs);
+
+	LIST_FOREACH(hdrs, le) {
+		struct sip_hdr *hdr = le->data;
+		char *buf = NULL;
+
+		if (re_sdprintf(&buf, "%r", &hdr->name))
+			return;
+
+		if (custom_hdrs_add(&call->custom_hdrs, buf,
+				    "%r", &hdr->val)) {
+			mem_deref(buf);
+			return;
+		}
+
+		mem_deref(buf);
+	}
+}
+
+
+const struct list *call_get_custom_hdrs(const struct call *call)
+{
+	if (!call)
+		return NULL;
+
+	return &call->custom_hdrs;
+}
+
+
+/**
+ * Connect an outgoing call to a given SIP uri
+ *
+ * @param call  Call Object
+ * @param paddr SIP address or uri to connect to
+ *
+ * @return 0 if success, otherwise errorcode
+ */
 int call_connect(struct call *call, const struct pl *paddr)
 {
 	struct sip_addr addr;
@@ -703,8 +749,15 @@ int call_connect(struct call *call, const struct pl *paddr)
 	/* if the peer-address is a full SIP address then we need
 	 * to parse it and extract the SIP uri part.
 	 */
-	if (0 == sip_addr_decode(&addr, paddr) && addr.dname.p) {
-		err = pl_strdup(&call->peer_uri, &addr.auri);
+	if (0 == sip_addr_decode(&addr, paddr)) {
+
+		if (pl_isset(&addr.params)) {
+			err = re_sdprintf(&call->peer_uri, "%r%r",
+					  &addr.auri, &addr.params);
+		}
+		else {
+			err = pl_strdup(&call->peer_uri, &addr.auri);
+		}
 	}
 	else {
 		err = pl_strdup(&call->peer_uri, paddr);
@@ -804,7 +857,8 @@ int call_progress(struct call *call)
 		return err;
 
 	err = sipsess_progress(call->sess, 183, "Session Progress",
-			       desc, "Allow: %s\r\n", uag_allowed_methods());
+			       desc, "Allow: %s\r\n",
+			       ua_allowed_methods(call->ua));
 
 	if (!err)
 		call_stream_start(call, false);
@@ -843,7 +897,7 @@ int call_answer(struct call *call, uint16_t scode)
 		return err;
 
 	err = sipsess_answer(call->sess, scode, "Answering", desc,
-			     "Allow: %s\r\n", uag_allowed_methods());
+			     "Allow: %s\r\n", ua_allowed_methods(call->ua));
 
 	mem_deref(desc);
 
@@ -953,6 +1007,14 @@ const char *call_peername(const struct call *call)
 }
 
 
+/**
+ * Print the call debug information
+ *
+ * @param pf   Print function
+ * @param call Call object
+ *
+ * @return 0 if success, otherwise errorcode
+ */
 int call_debug(struct re_printf *pf, const struct call *call)
 {
 	int err;
@@ -992,6 +1054,14 @@ static int print_duration(struct re_printf *pf, const struct call *call)
 }
 
 
+/**
+ * Print the call status
+ *
+ * @param pf   Print function
+ * @param call Call object
+ *
+ * @return 0 if success, otherwise errorcode
+ */
 int call_status(struct re_printf *pf, const struct call *call)
 {
 	struct le *le;
@@ -1267,13 +1337,14 @@ static void sipnot_close_handler(int err, const struct sip_msg *msg,
 {
 	struct call *call = arg;
 
-	if (err)
-		info("call: notification closed: %m\n", err);
-	else if (msg)
-		info("call: notification closed: %u %r\n",
-		     msg->scode, &msg->reason);
-
 	call->not = mem_deref(call->not);
+
+	if (err)
+		call_event_handler(call, CALL_EVENT_TRANSFER_FAILED,
+				   "%m", err);
+	else if (msg && msg->scode >= 300)
+		call_event_handler(call, CALL_EVENT_TRANSFER_FAILED,
+				   "%u %r", msg->scode, &msg->reason);
 }
 
 
@@ -1302,7 +1373,7 @@ static void sipsess_refer_handler(struct sip *sip, const struct sip_msg *msg,
 			      ua_cuser(call->ua), "message/sipfrag",
 			      auth_handler, call->acc, true,
 			      sipnot_close_handler, call,
-			      "Allow: %s\r\n", uag_allowed_methods());
+			      "Allow: %s\r\n", ua_allowed_methods(call->ua));
 	if (err) {
 		warning("call: refer: sipevent_accept failed: %m\n", err);
 		return;
@@ -1448,8 +1519,11 @@ int call_accept(struct call *call, struct sipsess_sock *sess_sock,
 			     auth_handler, call->acc, true,
 			     sipsess_offer_handler, sipsess_answer_handler,
 			     sipsess_estab_handler, sipsess_info_handler,
-			     sipsess_refer_handler, sipsess_close_handler,
-			     call, "Allow: %s\r\n", uag_allowed_methods());
+			     call->acc->refer ? sipsess_refer_handler : NULL,
+			     sipsess_close_handler,
+			     call, "Allow: %s\r\n",
+			     ua_allowed_methods(call->ua));
+
 	if (err) {
 		warning("call: sipsess_accept: %m\n", err);
 		return err;
@@ -1547,6 +1621,13 @@ static int send_invite(struct call *call)
 	if (err)
 		return err;
 
+#if 0
+	info("- - - - - S D P - O f f e r - - - - -\n"
+	     "%b"
+	     "- - - - - - - - - - - - - - - - - - -\n",
+	     desc->buf, desc->end);
+#endif
+
 	err = sipsess_connect(&call->sess, uag_sipsess_sock(),
 			      call->peer_uri,
 			      call->local_name,
@@ -1558,10 +1639,13 @@ static int send_invite(struct call *call)
 			      auth_handler, call->acc, true,
 			      sipsess_offer_handler, sipsess_answer_handler,
 			      sipsess_progr_handler, sipsess_estab_handler,
-			      sipsess_info_handler, sipsess_refer_handler,
+			      sipsess_info_handler,
+			      call->acc->refer ? sipsess_refer_handler : NULL,
 			      sipsess_close_handler, call,
-			      "Allow: %s\r\n%H", uag_allowed_methods(),
-			      ua_print_supported, call->ua);
+			      "Allow: %s\r\n%H%H",
+			      ua_allowed_methods(call->ua),
+			      ua_print_supported, call->ua,
+			      custom_hdrs_print, &call->custom_hdrs);
 	if (err) {
 		warning("call: sipsess_connect: %m\n", err);
 		goto out;
@@ -1667,6 +1751,16 @@ int call_reset_transp(struct call *call, const struct sa *laddr)
 }
 
 
+/**
+ * Send a SIP NOTIFY with a SIP message fragment
+ *
+ * @param call   Call object
+ * @param scode  SIP Status code
+ * @param reason Formatted SIP Reason phrase
+ * @param ...    Variable arguments
+ *
+ * @return 0 if success, otherwise errorcode
+ */
 int call_notify_sipfrag(struct call *call, uint16_t scode,
 			const char *reason, ...)
 {
@@ -1834,6 +1928,14 @@ uint16_t call_scode(const struct call *call)
 }
 
 
+/**
+ * Set the callback handlers for a call object
+ *
+ * @param call  Call object
+ * @param eh    Event handler
+ * @param dtmfh DTMF handler
+ * @param arg   Handler argument
+ */
 void call_set_handlers(struct call *call, call_event_h *eh,
 		       call_dtmf_h *dtmfh, void *arg)
 {

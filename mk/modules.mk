@@ -15,6 +15,7 @@
 #   USE_CAIRO         Cairo module
 #   USE_CONS          Console input driver
 #   USE_COREAUDIO     MacOSX Coreaudio audio driver
+#   USE_ECHO          Echo module
 #   USE_EVDEV         Event Device module
 #   USE_G711          G.711 audio codec
 #   USE_G722          G.722 audio codec
@@ -40,6 +41,7 @@
 #   USE_PLC           Packet Loss Concealment
 #   USE_PORTAUDIO     Portaudio audio driver
 #   USE_PULSE         Pulseaudio audio driver
+#   USE_RTCPSUMMARY   RTCP summary output after calls
 #   USE_SDL           libSDL video output
 #   USE_SILK          SILK (Skype) audio codec
 #   USE_SNDFILE       sndfile wav dumper
@@ -330,6 +332,9 @@ ifneq ($(USE_QTCAPTURE),)
 MODULES   += qtcapture
 CFLAGS    += -DQTCAPTURE_RUNLOOP
 endif
+ifneq ($(USE_ECHO),)
+MODULES   += echo
+endif
 ifneq ($(USE_EVDEV),)
 MODULES   += evdev
 endif
@@ -456,4 +461,7 @@ MODULES   += gzrtp
 endif
 ifneq ($(USE_DSHOW),)
 MODULES   += dshow
+endif
+ifneq ($(USE_RTCPSUMMARY),)
+MODULES   += rtcpsummary
 endif

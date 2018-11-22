@@ -13,7 +13,7 @@ extern "C" {
 
 
 /** Defines the Baresip version string */
-#define BARESIP_VERSION "0.5.10"
+#define BARESIP_VERSION "0.5.12"
 
 
 #ifndef NET_MAX_NS
@@ -62,6 +62,8 @@ int account_set_display_name(struct account *acc, const char *dname);
 int account_set_regint(struct account *acc, uint32_t regint);
 int account_set_mediaenc(struct account *acc, const char *mediaenc);
 int account_set_audio_codecs(struct account *acc, const char *codecs);
+int account_set_mwi(struct account *acc, const char *value);
+int account_set_call_transfer(struct account *acc, const char *value);
 int account_auth(const struct account *acc, char **username, char **password,
 		 const char *realm);
 struct list *account_aucodecl(const struct account *acc);
@@ -81,6 +83,8 @@ const char *account_stun_user(const struct account *acc);
 const char *account_stun_pass(const struct account *acc);
 const char *account_stun_host(const struct account *acc);
 const char *account_mediaenc(const struct account *acc);
+const char *account_mwi(const struct account *acc);
+const char *account_call_transfer(const struct account *acc);
 
 
 /*
@@ -122,6 +126,7 @@ typedef void (call_event_h)(struct call *call, enum call_event ev,
 			    const char *str, void *arg);
 typedef void (call_dtmf_h)(struct call *call, char key, void *arg);
 
+int  call_connect(struct call *call, const struct pl *paddr);
 int  call_modify(struct call *call);
 int  call_hold(struct call *call, bool hold);
 int  call_send_digit(struct call *call, char key);
@@ -130,6 +135,8 @@ bool call_has_video(const struct call *call);
 int  call_transfer(struct call *call, const char *uri);
 int  call_status(struct re_printf *pf, const struct call *call);
 int  call_debug(struct re_printf *pf, const struct call *call);
+int  call_notify_sipfrag(struct call *call, uint16_t scode,
+			 const char *reason, ...);
 void call_set_handlers(struct call *call, call_event_h *eh,
 		       call_dtmf_h *dtmfh, void *arg);
 uint16_t      call_scode(const struct call *call);
@@ -149,6 +156,18 @@ void          call_enable_rtp_timeout(struct call *call, uint32_t timeout_ms);
 uint32_t      call_linenum(const struct call *call);
 struct call  *call_find_linenum(const struct list *calls, uint32_t linenum);
 void call_set_current(struct list *calls, struct call *call);
+const struct list *call_get_custom_hdrs(const struct call *call);
+
+
+/*
+ * Custom headers
+ */
+
+typedef int (custom_hdrs_h)(const struct pl *name, const struct pl *val,
+	void *arg);     /* returns error code if any */
+
+int custom_hdrs_add(struct list *hdrs, const char *name, const char *fmt, ...);
+int custom_hdrs_apply(const struct list *hdrs, custom_hdrs_h *h, void *arg);
 
 
 /*
@@ -200,6 +219,7 @@ struct config_sip {
 	char uuid[64];          /**< Universally Unique Identifier  */
 	char local[64];         /**< Local SIP Address              */
 	char cert[256];         /**< SIP Certificate                */
+	char cafile[256];       /**< SIP CA-file                    */
 };
 
 /** Call config */
@@ -217,8 +237,6 @@ struct config_audio {
 	char play_dev[128];     /**< Audio playback device          */
 	char alert_mod[16];     /**< Audio alert module             */
 	char alert_dev[128];    /**< Audio alert device             */
-	struct range srate;     /**< Audio sampling rate in [Hz]    */
-	struct range channels;  /**< Nr. of audio channels (1=mono) */
 	uint32_t srate_play;    /**< Opt. sampling rate for player  */
 	uint32_t srate_src;     /**< Opt. sampling rate for source  */
 	uint32_t channels_play; /**< Opt. channels for player       */
@@ -325,22 +343,16 @@ enum presence_status {
 struct contact;
 typedef void (contact_update_h)(struct contact *c, bool removed, void *arg);
 
-struct contacts {
-	struct list cl;
-	struct hash *cht;
-
-	contact_update_h *handler;
-	void* handler_arg;
-};
+struct contacts;
 
 
-int  contact_init(struct contacts *contacts);
-void contact_close(struct contacts *contacts);
+int  contact_init(struct contacts **contactsp);
 int  contact_add(struct contacts *contacts,
 		 struct contact **contactp, const struct pl *addr);
 void contact_remove(struct contacts *contacts, struct contact *c);
 void contact_set_update_handler(struct contacts *contacs,
 				contact_update_h *updateh, void *arg);
+int  contact_print(struct re_printf *pf, const struct contact *cnt);
 int  contacts_print(struct re_printf *pf, const struct contacts *contacts);
 enum presence_status contact_presence(const struct contact *c);
 void contact_set_presence(struct contact *c, enum presence_status status);
@@ -350,6 +362,7 @@ struct contact  *contact_find(const struct contacts *contacts,
 struct sip_addr *contact_addr(const struct contact *c);
 struct list     *contact_list(const struct contacts *contacts);
 const char      *contact_str(const struct contact *c);
+const char      *contact_uri(const struct contact *c);
 const char      *contact_presence_str(enum presence_status status);
 
 
@@ -364,10 +377,29 @@ struct media_ctx {
 
 
 /*
+ * Media Device
+ */
+
+struct mediadev;
+
+/** Defines a media device */
+struct mediadev {
+	struct le   le;
+	char  *name;
+};
+
+int mediadev_add(struct list *dev_list, const char *name);
+struct mediadev *mediadev_find(const struct list *dev_list, const char *name);
+struct mediadev *mediadev_get_default(const struct list *dev_list);
+int mediadev_print(struct re_printf *pf, const struct list *dev_list);
+
+
+/*
  * Message
  */
 
-typedef void (message_recv_h)(const struct pl *peer, const struct pl *ctype,
+typedef void (message_recv_h)(struct ua *ua, const struct pl *peer,
+			      const struct pl *ctype,
 			      struct mbuf *body, void *arg);
 
 struct message;
@@ -403,6 +435,14 @@ typedef int  (ausrc_alloc_h)(struct ausrc_st **stp, const struct ausrc *ausrc,
 			     struct ausrc_prm *prm, const char *device,
 			     ausrc_read_h *rh, ausrc_error_h *errh, void *arg);
 
+/** Defines an Audio Source */
+struct ausrc {
+	struct le        le;
+	const char      *name;
+	struct list      dev_list;
+	ausrc_alloc_h   *alloch;
+};
+
 int ausrc_register(struct ausrc **asp, struct list *ausrcl, const char *name,
 		   ausrc_alloc_h *alloch);
 const struct ausrc *ausrc_find(const struct list *ausrcl, const char *name);
@@ -433,6 +473,14 @@ typedef void (auplay_write_h)(void *sampv, size_t sampc, void *arg);
 typedef int  (auplay_alloc_h)(struct auplay_st **stp, const struct auplay *ap,
 			      struct auplay_prm *prm, const char *device,
 			      auplay_write_h *wh, void *arg);
+
+/** Defines an Audio Player */
+struct auplay {
+	struct le        le;
+	const char      *name;
+	struct list      dev_list;
+	auplay_alloc_h  *alloch;
+};
 
 int auplay_register(struct auplay **pp, struct list *auplayl,
 		    const char *name, auplay_alloc_h *alloch);
@@ -465,19 +513,20 @@ struct aufilt_prm {
 	uint32_t srate;       /**< Sampling rate in [Hz]        */
 	uint8_t  ch;          /**< Number of channels           */
 	uint32_t ptime;       /**< Wanted packet-time in [ms]   */
+	int      fmt;         /**< Sample format (enum aufmt)   */
 };
 
 typedef int (aufilt_encupd_h)(struct aufilt_enc_st **stp, void **ctx,
 			      const struct aufilt *af, struct aufilt_prm *prm,
 			      const struct audio *au);
 typedef int (aufilt_encode_h)(struct aufilt_enc_st *st,
-			      int16_t *sampv, size_t *sampc);
+			      void *sampv, size_t *sampc);
 
 typedef int (aufilt_decupd_h)(struct aufilt_dec_st **stp, void **ctx,
 			      const struct aufilt *af, struct aufilt_prm *prm,
 			      const struct audio *au);
 typedef int (aufilt_decode_h)(struct aufilt_dec_st *st,
-			      int16_t *sampv, size_t *sampc);
+			      void *sampv, size_t *sampc);
 
 struct aufilt {
 	struct le le;
@@ -607,6 +656,7 @@ enum ua_event {
 	UA_EVENT_REGISTER_OK,
 	UA_EVENT_REGISTER_FAIL,
 	UA_EVENT_UNREGISTERING,
+	UA_EVENT_MWI_NOTIFY,
 	UA_EVENT_SHUTDOWN,
 	UA_EVENT_EXIT,
 
@@ -615,6 +665,7 @@ enum ua_event {
 	UA_EVENT_CALL_PROGRESS,
 	UA_EVENT_CALL_ESTABLISHED,
 	UA_EVENT_CALL_CLOSED,
+	UA_EVENT_CALL_TRANSFER,
 	UA_EVENT_CALL_TRANSFER_FAILED,
 	UA_EVENT_CALL_DTMF_START,
 	UA_EVENT_CALL_DTMF_END,
@@ -622,6 +673,7 @@ enum ua_event {
 	UA_EVENT_CALL_MENC,
 	UA_EVENT_VU_TX,
 	UA_EVENT_VU_RX,
+	UA_EVENT_AUDIO_ERROR,
 
 	UA_EVENT_MAX,
 };
@@ -642,8 +694,8 @@ typedef void (ua_exit_h)(void *arg);
 /* Multiple instances */
 int  ua_alloc(struct ua **uap, const char *aor);
 int  ua_connect(struct ua *ua, struct call **callp,
-		const char *from_uri, const char *uri,
-		const char *params, enum vidmode vmode);
+		const char *from_uri, const char *req_uri,
+		enum vidmode vmode);
 void ua_hangup(struct ua *ua, struct call *call,
 	       uint16_t scode, const char *reason);
 int  ua_answer(struct ua *ua, struct call *call);
@@ -674,6 +726,13 @@ void ua_set_media_af(struct ua *ua, int af_media);
 void ua_set_catchall(struct ua *ua, bool enabled);
 void ua_event(struct ua *ua, enum ua_event ev, struct call *call,
 	      const char *fmt, ...);
+int ua_add_xhdr_filter(struct ua *ua, const char *hdr_name);
+void ua_set_custom_hdrs(struct ua *ua, struct list *custom_hdrs);
+int  ua_uri_complete(struct ua *ua, struct mbuf *buf, const char *uri);
+int  ua_call_alloc(struct call **callp, struct ua *ua,
+		   enum vidmode vidmode, const struct sip_msg *msg,
+		   struct call *xcall, const char *local_uri,
+		   bool use_rtp);
 
 
 /* One instance */
@@ -823,6 +882,7 @@ typedef void (vidsrc_update_h)(struct vidsrc_st *st, struct vidsrc_prm *prm,
 struct vidsrc {
 	struct le         le;
 	const char       *name;
+	struct list      dev_list;
 	vidsrc_alloc_h   *alloch;
 	vidsrc_update_h  *updateh;
 };
@@ -860,7 +920,7 @@ typedef int  (vidisp_alloc_h)(struct vidisp_st **vp,
 typedef int  (vidisp_update_h)(struct vidisp_st *st, bool fullscreen,
 			       int orient, const struct vidrect *window);
 typedef int  (vidisp_disp_h)(struct vidisp_st *st, const char *title,
-			     const struct vidframe *frame);
+			     const struct vidframe *frame, uint64_t timestamp);
 typedef void (vidisp_hide_h)(struct vidisp_st *st);
 
 /** Defines a Video display */
@@ -881,7 +941,7 @@ int vidisp_alloc(struct vidisp_st **stp, struct list *vidispl,
 		 struct vidisp_prm *prm, const char *dev,
 		 vidisp_resize_h *resizeh, void *arg);
 int vidisp_display(struct vidisp_st *st, const char *title,
-		   const struct vidframe *frame);
+		   const struct vidframe *frame, uint64_t timestamp);
 const struct vidisp *vidisp_find(const struct list *vidispl, const char *name);
 struct vidisp *vidisp_get(struct vidisp_st *st);
 
@@ -922,6 +982,7 @@ struct aucodec {
 	uint32_t srate;             /* Audio samplerate */
 	uint32_t crate;             /* RTP Clock rate   */
 	uint8_t ch;
+	uint8_t pch;                /* RTP packet channels */
 	const char *fmtp;
 	auenc_update_h *encupdh;
 	auenc_encode_h *ench;
@@ -1019,12 +1080,12 @@ struct vidfilt_dec_st {
 typedef int (vidfilt_encupd_h)(struct vidfilt_enc_st **stp, void **ctx,
 			       const struct vidfilt *vf);
 typedef int (vidfilt_encode_h)(struct vidfilt_enc_st *st,
-			       struct vidframe *frame);
+			       struct vidframe *frame, uint64_t *timestamp);
 
 typedef int (vidfilt_decupd_h)(struct vidfilt_dec_st **stp, void **ctx,
 			       const struct vidfilt *vf);
 typedef int (vidfilt_decode_h)(struct vidfilt_dec_st *st,
-			       struct vidframe *frame);
+			       struct vidframe *frame, uint64_t *timestamp);
 
 struct vidfilt {
 	struct le le;
@@ -1060,7 +1121,9 @@ int  audio_debug(struct re_printf *pf, const struct audio *a);
 struct stream *audio_strm(const struct audio *au);
 int  audio_set_bitrate(struct audio *au, uint32_t bitrate);
 bool audio_rxaubuf_started(const struct audio *au);
+int  audio_start(struct audio *a);
 void audio_stop(struct audio *a);
+bool audio_started(const struct audio *a);
 void audio_set_hold(struct audio *au, bool hold);
 
 
@@ -1079,11 +1142,11 @@ int   video_set_source(struct video *v, const char *name, const char *dev);
 void  video_set_devicename(struct video *v, const char *src, const char *disp);
 void  video_encoder_cycle(struct video *video);
 int   video_debug(struct re_printf *pf, const struct video *v);
-uint64_t video_calc_rtp_timestamp(int64_t pts, double fps);
 uint64_t video_calc_rtp_timestamp_fix(uint64_t timestamp);
 double video_calc_seconds(uint64_t rtp_ts);
 struct stream *video_strm(const struct video *v);
 double video_timestamp_to_seconds(uint64_t timestamp);
+uint64_t video_calc_timebase_timestamp(uint64_t rtp_ts);
 
 
 /*
@@ -1092,7 +1155,13 @@ double video_timestamp_to_seconds(uint64_t timestamp);
 
 const struct rtcp_stats *stream_rtcp_stats(const struct stream *strm);
 struct call *stream_call(const struct stream *strm);
-
+const struct sdp_media *stream_sdp(const struct stream *strm);
+uint32_t stream_metric_get_tx_n_packets(const struct stream *strm);
+uint32_t stream_metric_get_tx_n_bytes(const struct stream *strm);
+uint32_t stream_metric_get_tx_n_err(const struct stream *strm);
+uint32_t stream_metric_get_rx_n_packets(const struct stream *strm);
+uint32_t stream_metric_get_rx_n_bytes(const struct stream *strm);
+uint32_t stream_metric_get_rx_n_err(const struct stream *strm);
 
 /*
  * Media NAT

@@ -19,6 +19,9 @@ static const char *event_class_name(enum ua_event ev)
 	case UA_EVENT_UNREGISTERING:
 		return "register";
 
+	case UA_EVENT_MWI_NOTIFY:
+		return "mwi";
+
 	case UA_EVENT_SHUTDOWN:
 	case UA_EVENT_EXIT:
 		return "application";
@@ -28,6 +31,7 @@ static const char *event_class_name(enum ua_event ev)
 	case UA_EVENT_CALL_PROGRESS:
 	case UA_EVENT_CALL_ESTABLISHED:
 	case UA_EVENT_CALL_CLOSED:
+	case UA_EVENT_CALL_TRANSFER:
 	case UA_EVENT_CALL_TRANSFER_FAILED:
 	case UA_EVENT_CALL_DTMF_START:
 	case UA_EVENT_CALL_DTMF_END:
@@ -167,6 +171,7 @@ const char *uag_event_str(enum ua_event ev)
 	case UA_EVENT_REGISTER_OK:          return "REGISTER_OK";
 	case UA_EVENT_REGISTER_FAIL:        return "REGISTER_FAIL";
 	case UA_EVENT_UNREGISTERING:        return "UNREGISTERING";
+	case UA_EVENT_MWI_NOTIFY:           return "MWI_NOTIFY";
 	case UA_EVENT_SHUTDOWN:             return "SHUTDOWN";
 	case UA_EVENT_EXIT:                 return "EXIT";
 	case UA_EVENT_CALL_INCOMING:        return "CALL_INCOMING";
@@ -174,6 +179,7 @@ const char *uag_event_str(enum ua_event ev)
 	case UA_EVENT_CALL_PROGRESS:        return "CALL_PROGRESS";
 	case UA_EVENT_CALL_ESTABLISHED:     return "CALL_ESTABLISHED";
 	case UA_EVENT_CALL_CLOSED:          return "CALL_CLOSED";
+	case UA_EVENT_CALL_TRANSFER:        return "TRANSFER";
 	case UA_EVENT_CALL_TRANSFER_FAILED: return "TRANSFER_FAILED";
 	case UA_EVENT_CALL_DTMF_START:      return "CALL_DTMF_START";
 	case UA_EVENT_CALL_DTMF_END:        return "CALL_DTMF_END";
@@ -181,6 +187,7 @@ const char *uag_event_str(enum ua_event ev)
 	case UA_EVENT_CALL_MENC:            return "CALL_MENC";
 	case UA_EVENT_VU_TX:                return "VU_TX_REPORT";
 	case UA_EVENT_VU_RX:                return "VU_RX_REPORT";
+	case UA_EVENT_AUDIO_ERROR:          return "AUDIO_ERROR";
 	default: return "?";
 	}
 }

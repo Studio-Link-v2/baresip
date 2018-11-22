@@ -26,7 +26,6 @@ static void destructor(void *arg)
 	for (i=0; i<ARRAY_SIZE(acc->outboundv); i++)
 		mem_deref(acc->outboundv[i]);
 	mem_deref(acc->regq);
-	mem_deref(acc->rtpkeep);
 	mem_deref(acc->sipnat);
 	mem_deref(acc->stun_user);
 	mem_deref(acc->stun_pass);
@@ -126,7 +125,7 @@ static int stunsrv_decode(struct account *acc, const struct sip_addr *aor)
 }
 
 
-/** Decode media parameters */
+/* Decode media parameters */
 static int media_decode(struct account *acc, const struct pl *prm)
 {
 	int err = 0;
@@ -136,7 +135,6 @@ static int media_decode(struct account *acc, const struct pl *prm)
 
 	err |= param_dstr(&acc->mencid,  prm, "mediaenc");
 	err |= param_dstr(&acc->mnatid,  prm, "medianat");
-	err |= param_dstr(&acc->rtpkeep, prm, "rtpkeep" );
 	err |= param_u32(&acc->ptime,    prm, "ptime"   );
 
 	return err;
@@ -287,7 +285,7 @@ static int video_codecs_decode(struct account *acc, const struct pl *prm)
 
 static int sip_params_decode(struct account *acc, const struct sip_addr *aor)
 {
-	struct pl auth_user;
+	struct pl auth_user, tmp;
 	size_t i;
 	int err = 0;
 
@@ -325,6 +323,16 @@ static int sip_params_decode(struct account *acc, const struct sip_addr *aor)
 
 	if (pl_isset(&aor->dname))
 		err |= pl_strdup(&acc->dispname, &aor->dname);
+
+	if (0 != msg_param_decode(&aor->params, "mwi", &tmp))
+		acc->mwi = true;
+	else
+		acc->mwi = pl_strcasecmp(&tmp, "no") != 0;
+
+	if (0 != msg_param_decode(&aor->params, "call_transfer", &tmp))
+		acc->refer = true;
+	else
+		acc->refer = pl_strcasecmp(&tmp, "no") != 0;
 
 	return err;
 }
@@ -394,14 +402,11 @@ int account_alloc(struct account **accp, const char *sipaddr)
 	/* optional password prompt */
 	if (pl_isset(&acc->laddr.uri.password)) {
 
-		warning("account: username:password is now deprecated"
+		warning("account: username:password is now disabled"
 			" please use ;auth_pass=xxx instead\n");
 
-		err = re_sdprintf(&acc->auth_pass, "%H",
-				  uri_password_unescape,
-				  &acc->laddr.uri.password);
-		if (err)
-			goto out;
+		err = EINVAL;
+		goto out;
 	}
 	else if (0 == msg_param_decode(&acc->laddr.params, "auth_pass", &pl)) {
 		err = pl_strdup(&acc->auth_pass, &pl);
@@ -557,7 +562,7 @@ int account_set_regint(struct account *acc, uint32_t regint)
  */
 int account_set_mediaenc(struct account *acc, const char *mencid)
 {
-	const struct menc *menc;
+	const struct menc *menc = NULL;
 	if (!acc)
 		return EINVAL;
 
@@ -627,6 +632,62 @@ int account_set_display_name(struct account *acc, const char *dname)
 
 	if (dname)
 		return str_dup(&acc->dispname, dname);
+
+	return 0;
+}
+
+
+/**
+ * Sets MWI on (value "yes") or off (value "no")
+ *
+ * @param acc      User-Agent account
+ * @param value    "yes" or "no"
+ *
+ * @return 0 if success, otherwise errorcode
+ */
+int account_set_mwi(struct account *acc, const char *value)
+{
+	if (!acc)
+		return EINVAL;
+
+	if (0 == str_casecmp(value, "yes"))
+		acc->mwi = true;
+	else
+		if (0 == str_casecmp(value, "no"))
+			acc->mwi = false;
+		else {
+			warning("account: unknown mwi value: %r\n",
+				value);
+			return EINVAL;
+		}
+
+	return 0;
+}
+
+
+/**
+ * Sets call transfer on (value "yes") or off (value "no")
+ *
+ * @param acc      User-Agent account
+ * @param value    "yes" or "no"
+ *
+ * @return 0 if success, otherwise errorcode
+ */
+int account_set_call_transfer(struct account *acc, const char *value)
+{
+	if (!acc)
+		return EINVAL;
+
+	if (0 == str_casecmp(value, "yes"))
+		acc->refer = true;
+	else
+		if (0 == str_casecmp(value, "no"))
+			acc->refer = false;
+		else {
+			warning("account: unknown call transfer: %r\n",
+				value);
+			return EINVAL;
+		}
 
 	return 0;
 }
@@ -891,12 +952,59 @@ static const char *answermode_str(enum answermode mode)
 }
 
 
+/**
+ * Get the media encryption of an account
+ *
+ * @param acc User-Agent account
+ *
+ * @return Media encryption id or NULL if not set
+ */
 const char *account_mediaenc(const struct account *acc)
 {
 	return acc ? acc->mencid : NULL;
 }
 
 
+/**
+ * Get MWI capability of an account
+ *
+ * @param acc User-Agent account
+ *
+ * @return "yes" or "no"
+ */
+const char *account_mwi(const struct account *acc)
+{
+	if (!acc)
+		return "no";
+
+	return acc->mwi ? "yes" : "no";
+}
+
+
+/**
+ * Get call transfer capability of an account
+ *
+ * @param acc User-Agent account
+ *
+ * @return "yes" or "no"
+ */
+const char *account_call_transfer(const struct account *acc)
+{
+	if (!acc)
+		return "no";
+
+	return acc->refer ? "yes" : "no";
+}
+
+
+/**
+ * Print the account debug information
+ *
+ * @param pf  Print function
+ * @param acc User-Agent account
+ *
+ * @return 0 if success, otherwise errorcode
+ */
 int account_debug(struct re_printf *pf, const struct account *acc)
 {
 	struct le *le;
@@ -935,11 +1043,11 @@ int account_debug(struct re_printf *pf, const struct account *acc)
 					  i+1, acc->outboundv[i]);
 		}
 	}
+	err |= re_hprintf(pf, " mwi:          %s\n", account_mwi(acc));
 	err |= re_hprintf(pf, " ptime:        %u\n", acc->ptime);
 	err |= re_hprintf(pf, " regint:       %u\n", acc->regint);
 	err |= re_hprintf(pf, " pubint:       %u\n", acc->pubint);
 	err |= re_hprintf(pf, " regq:         %s\n", acc->regq);
-	err |= re_hprintf(pf, " rtpkeep:      %s\n", acc->rtpkeep);
 	err |= re_hprintf(pf, " sipnat:       %s\n", acc->sipnat);
 	err |= re_hprintf(pf, " stunserver:   stun:%s@%s:%u\n",
 			  acc->stun_user, acc->stun_host, acc->stun_port);
@@ -951,6 +1059,8 @@ int account_debug(struct re_printf *pf, const struct account *acc)
 		}
 		err |= re_hprintf(pf, "\n");
 	}
+	err |= re_hprintf(pf, " call_transfer:         %s\n",
+			  account_call_transfer(acc));
 
 	return err;
 }

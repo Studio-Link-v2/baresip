@@ -5,6 +5,7 @@
  * Copyright (C) 2010 - 2015 Creytiv.com
  */
 #include <re.h>
+#include <rem.h>
 #include <baresip.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -543,7 +544,8 @@ static void ua_event_handler(struct ua *ua,
 
 
 #ifdef USE_NOTIFICATIONS
-static void message_handler(const struct pl *peer, const struct pl *ctype,
+static void message_handler(struct ua *ua,
+			    const struct pl *peer, const struct pl *ctype,
 			    struct mbuf *body, void *arg)
 {
 	struct gtk_mod *mod = arg;
@@ -556,6 +558,7 @@ static void message_handler(const struct pl *peer, const struct pl *ctype,
 	NotifyNotification *notification;
 #endif
 
+	(void)ua;
 	(void)ctype;
 
 
@@ -664,7 +667,7 @@ static void mqueue_handler(int id, void *data, void *arg)
 
 	case MQ_CONNECT:
 		uri = data;
-		err = ua_connect(ua, &call, NULL, uri, NULL, VIDMODE_ON);
+		err = ua_connect(ua, &call, NULL, uri, VIDMODE_ON);
 		if (err) {
 			gdk_threads_enter();
 			warning_dialog("Call failed",
@@ -899,6 +902,12 @@ static int vu_encode_update(struct aufilt_enc_st **stp, void **ctx,
 	if (*stp)
 		return 0;
 
+	if (prm->fmt != AUFMT_S16LE) {
+		warning("vumeter: unsupported sample format (%s)\n",
+			aufmt_name(prm->fmt));
+		return ENOTSUP;
+	}
+
 	st = mem_zalloc(sizeof(*st), vu_enc_destructor);
 	if (!st)
 		return ENOMEM;
@@ -928,6 +937,12 @@ static int vu_decode_update(struct aufilt_dec_st **stp, void **ctx,
 	if (*stp)
 		return 0;
 
+	if (prm->fmt != AUFMT_S16LE) {
+		warning("vumeter: unsupported sample format (%s)\n",
+			aufmt_name(prm->fmt));
+		return ENOTSUP;
+	}
+
 	st = mem_zalloc(sizeof(*st), vu_dec_destructor);
 	if (!st)
 		return ENOMEM;
@@ -942,7 +957,7 @@ static int vu_decode_update(struct aufilt_dec_st **stp, void **ctx,
 }
 
 
-static int vu_encode(struct aufilt_enc_st *st, int16_t *sampv, size_t *sampc)
+static int vu_encode(struct aufilt_enc_st *st, void *sampv, size_t *sampc)
 {
 	struct vumeter_enc *vu = (struct vumeter_enc *)st;
 
@@ -953,7 +968,7 @@ static int vu_encode(struct aufilt_enc_st *st, int16_t *sampv, size_t *sampc)
 }
 
 
-static int vu_decode(struct aufilt_dec_st *st, int16_t *sampv, size_t *sampc)
+static int vu_decode(struct aufilt_dec_st *st, void *sampv, size_t *sampc)
 {
 	struct vumeter_dec *vu = (struct vumeter_dec *)st;
 
@@ -983,7 +998,7 @@ static int cmd_popup_menu(struct re_printf *pf, void *unused)
 
 
 static const struct cmd cmdv[] = {
-	{"gtk", 'G',   0, "Pop up GTK+ menu",         cmd_popup_menu       },
+	{"gtk", 0,   0, "Pop up GTK+ menu",         cmd_popup_menu       },
 };
 
 

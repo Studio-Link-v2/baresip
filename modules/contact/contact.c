@@ -25,6 +25,7 @@ static char cmd_desc[128] = "Send MESSAGE to peer";
 static int confline_handler(const struct pl *addr, void *arg)
 {
 	struct contacts *contacts = arg;
+
 	return contact_add(contacts, NULL, addr);
 }
 
@@ -34,7 +35,7 @@ static int cmd_contact(struct re_printf *pf, void *arg)
 	const struct cmd_arg *carg = arg;
 	struct contacts *contacts = baresip_contacts();
 	struct contact *cnt = NULL;
-	struct pl dname, user, pl;
+	struct pl dname, user, pl = pl_null;
 	struct le *le;
 	int err = 0;
 
@@ -79,7 +80,7 @@ static int cmd_contact(struct re_printf *pf, void *arg)
 
 		case '|':
 			err = ua_connect(uag_current(), NULL, NULL,
-					 contact_str(cnt), NULL, VIDMODE_ON);
+					 contact_str(cnt), VIDMODE_ON);
 			if (err) {
 				warning("contact: ua_connect failed: %m\n",
 					err);
@@ -106,6 +107,7 @@ static int cmd_contact(struct re_printf *pf, void *arg)
 static int print_contacts(struct re_printf *pf, void *unused)
 {
 	(void)unused;
+
 	return contacts_print(pf, baresip_contacts());
 }
 
